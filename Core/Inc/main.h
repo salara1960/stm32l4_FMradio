@@ -77,7 +77,8 @@ enum {
 	cmdScan,
 	cmdFreq,
 	cmdVol,
-	cmdBass
+	cmdBass,
+	cmdList
 };
 
 enum {
@@ -96,7 +97,8 @@ enum {
 	evt_Scan,
 	evt_Freq,
 	evt_Vol,
-	evt_Bass
+	evt_Bass,
+	evt_List
 };
 
 
@@ -175,13 +177,18 @@ enum {
 
 
 #define MAX_UART_BUF    1024
-#define MAX_CMDS          15
+#define MAX_CMDS          16
+#define MAX_LIST          24
 
 #ifdef SET_FIFO_MODE
 	#define MAX_FIFO_SIZE 64
 #endif
 
 
+typedef struct {
+	float freq;
+	char name[16];
+} rec_t;
 
 /* USER CODE END EM */
 
