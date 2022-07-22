@@ -79,7 +79,8 @@ DMA_HandleTypeDef hdma_usart2_tx;
 //const char *ver = "0.9.3 19.07.22";//add show_line function for radio params
 //const char *ver = "0.9.4 20.07.22";
 //const char *ver = "1.0 21.07.22";//add two button KEY0 & KEY1 (scan_up & scan_down)
-const char *ver = "1.1 21.07.22";//add new command 'list'
+//const char *ver = "1.1 21.07.22";//add new command 'list'
+const char *ver = "1.2 22.07.22";//add select band feature
 
 
 
@@ -104,7 +105,8 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
+static uint32_t epoch = 1658501279;
+//1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
 //1657971799;1657915595;1657635512;1657313424;//1657283440;//1657234028;//1657200272;//1657194633;//1657144926;
 bool setDate = false;
 uint8_t tZone = 0;
@@ -126,7 +128,9 @@ const char *s_cmds[MAX_CMDS] = {
 	"freq:",
 	"vol:",
 	"bass:",
-	"list"
+	"list",
+	"band:"
+	//"step:"
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -144,7 +148,9 @@ const char *str_cmds[MAX_CMDS] = {
 	"setFreq",
 	"Volume",
 	"BassBoost",
-	"nextStation"
+	"nextStation",
+	"Band"
+	//"Step"
 };
 
 #ifdef SET_FIFO_MODE
@@ -178,34 +184,6 @@ uint8_t spiRdy = 1;
 	bool chipPresent = false;
 	bool validChipID = false;
 	//
-	const char *noneStation = "???";
-	static const rec_t list[MAX_LIST] = {
-		{72.1, "Shanson"},// Шансон
-		{93.6, "Radio_7"},// Радио 7
-		{94.0, "ComedyRadio"},// Комеди Радио
-		{95.1, "VestiFM"},// Вести ФМ
-		{95.5, "RetroFM"},// Ретро ФМ
-		{96.3, "RussianRadio"},// Русское Радио
-		{97.0, "RadioBook"},// Радио Книга
-		{97.9, "SilverRain"},// Серебрянный Дождь
-		{98.5, "RadioENERGY"},// Радио Энергия
-		{99.5, "RadioStar"},// Радио Звезда
-		{100.1, "AutoRadio"},// АвтоРадио
-		{100.6, "RussianArea"},// Русский Край
-		{100.9, "Monte-Carlo"},// Монте-Карло
-		{101.3, "OurtRadio"},// Наше Радио
-		{101.8, "BussinessFM"},// Бизнес ФМ
-		{102.5, "Маяк"},// Маяк
-		{102.9, "LoveRadio"},// Любимое Радио
-		{103.4, "Studio21"},// Студия 21
-		{103.9, "RadioRussian"},// Радио России
-		{104.5, "Europe+"},// Европа Плюс
-		{105.2, "Baltic+"},// Балтик Плюс
-		{105.9, "RoadRadio"},// Дорожное Радио
-		{106.4, "RadioMaxim"},// Радио Максим
-		{107.2, "Coms.True"}// Комсомольская Правда
-	};
-
 #endif
 
 #ifdef SET_DISPLAY
@@ -218,6 +196,10 @@ uint8_t spiRdy = 1;
 	float newFreq = 95.1;
 	float lBand = 0.0;
 	float rBand = 0.0;
+	uint8_t Band = 2;// :2
+	uint8_t newBand = 2;
+//	uint8_t Step = 0;
+//	uint8_t newStep = 0;
 	uint16_t Chan = 0;
 	uint16_t RSSI = 0;
 	volatile uint8_t i2cRdy = 1;
@@ -229,6 +211,49 @@ uint8_t spiRdy = 1;
 	uint8_t BassBoost = 0;
 	uint8_t newBassBoost = 0;
 	bool stereo = false;
+	//
+	const char *noneStation = "???";
+	static const rec_t list[MAX_LIST] = {
+		{72.1, "Шансон"},// Шансон
+		{93.6, "Радио_7"},// Радио 7
+		{94.0, "Комеди_Радио"},// Комеди Радио
+		{95.1, "Вести_ФМ"},// Вести ФМ
+		{95.5, "Ретро_ФМ"},// Ретро ФМ
+		{96.3, "Русское_Радио"},// Русское Радио
+		{97.0, "Радио_Вера"},// Радио Книга
+		{97.9, "Серебр.Дождь"},// Серебрянный Дождь
+		{98.5, "Радио_Энергия"},// Радио Энергия
+		{99.5, "Радио_Звезда"},// Радио Звезда
+		{100.1, "Авто_Радио"},// АвтоРадио
+		{100.6, "Русский_Край"},// Русский Край
+		{100.9, "Монте-Карло"},// Монте-Карло
+		{101.3, "Наше_Радио"},// Наше Радио
+		{101.8, "Бизнес_ФМ"},// Бизнес ФМ
+		{102.5, "Маяк"},// Маяк
+		{102.9, "Любимое_Радио"},// Любимое Радио
+		{103.4, "Студия_21"},// Студия 21
+		{103.9, "Радио_России"},// Радио России
+		{104.5, "Европа_Плюс"},// Европа Плюс
+		{105.2, "Балтик_Плюс"},// Балтик Плюс
+		{105.9, "Дорожное_Радио"},// Дорожное Радио
+		{106.4, "Радио_Максим"},// Радио Максим
+		{107.2, "Радио_КП"}// Комсомольская Правда
+	};
+	uint16_t listSize = 0;
+	//
+	const char *allBands[MAX_BAND] = {
+		"87-108 MHz",// (US/Europe)",
+		"76-91 MHz",// (Japan)",
+		"76-108 MHz",// (world wide)",
+		"65-76 MHz"// (East Europe) or 50-65MHz"
+	};
+	/*const char *allSteps[MAX_STEP] = {
+		"100 kHz",
+		"200 kHz",
+		"50 kHz",
+		"25 KHz"
+	};*/
+
 #endif
 
 /* USER CODE END PV */
@@ -372,13 +397,14 @@ int main(void)
 
 
   	uint16_t lin1 = 1;
-  	uint16_t lin2 = lin1 + Font_6x8.FontHeight + 3;//chipID...
-  	uint16_t lin3 = lin2 + Font_6x8.FontHeight;//Band...
-  	uint16_t lin4 = lin3 + Font_6x8.FontHeight;//Volume...//Freq...
-  	uint16_t lin5 = lin4 + Font_6x8.FontHeight;//Freq...//Volume...
-  	uint16_t lin6 = lin5 + Font_6x8.FontHeight;//Station
+  	uint16_t lin2 = lin1 + Font_6x8.FontHeight;//chipID...
+  	uint16_t lin3 = lin2 + Font_6x8.FontHeight + 1;//Band...
+  	uint16_t lin4 = lin3 + Font_6x8.FontHeight + 1;//Volume...//Freq...
+  	uint16_t lin5 = lin4 + Font_6x8.FontHeight + 1;//Freq...//Volume...
+  	uint16_t lin6 = lin5 + Font_6x8.FontHeight + 1;//Station
   	char st[64];
-  	char sta[64];
+  	char sta[32];
+  	char stb[32];
 
   	ST7565_Reset();
   	ST7565_Init();
@@ -395,11 +421,11 @@ int main(void)
     	if (!xf) xf = 1;
     	ST7565_Print(xf, lin2, st, &Font_6x8, 1, PIX_ON);
 
-    	il = sprintf(st, "FM Band:%.1f-%.1f", lBand, rBand);
-    	int lib = il;
-    	xf = ((SCREEN_WIDTH - (Font_6x8.FontWidth * il)) >> 1) & 0x7f;
+    	int it = sprintf(stb, "FM Band:%s", allBands[Band]);//(uint16_t)lBand, (uint16_t)rBand);
+    	int lit = it;
+    	xf = ((SCREEN_WIDTH - (Font_6x8.FontWidth * it)) >> 1) & 0x7f;
     	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
-    	ST7565_Print(xf, lin3, st, &Font_6x8, 1, PIX_ON);
+    	ST7565_Print(xf, lin3, stb, &Font_6x8, 1, PIX_ON);
 
     	int im = sprintf(st, "Vol:%u Bass:%u", Volume, BassBoost);
     	int lim = im;
@@ -416,14 +442,14 @@ int main(void)
     	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
     	ST7565_Print(xf, lin5, st, &Font_6x8, 1, PIX_ON);
 
-    	int ia = sprintf(sta, "'%s'", nameStation(Freq));
+    	int ia = sprintf(sta, "%s", nameStation(Freq));
     	int lia = ia;
     	xf = ((SCREEN_WIDTH - (Font_6x8.FontWidth * ia)) >> 1) & 0x7f;
     	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
     	ST7565_Print(xf, lin6, sta, &Font_6x8, 1, PIX_ON);
 
-    	Report(1, "ChipID:0x%x Chan:%u Freq:%.2f %s RSSI:%u Band:%.1f-%.1f Vol:%u BassEn:%u\r\n",
-    			rdaID, Chan, Freq, sta, RSSI, lBand, rBand, Volume, BassBoost);
+    	Report(1, "ChipID:0x%x Chan:%u Freq:%.2f %s RSSI:%u Band:%s Vol:%u BassEn:%u\r\n",
+    			rdaID, Chan, Freq, sta, RSSI, allBands[Band], Volume, BassBoost);
 	#endif
 
     ST7565_DrawRectangle(0, Font_6x8.FontHeight, SCREEN_WIDTH - 1, SCREEN_HEIGHT - (Font_6x8.FontHeight << 1) - 2, PIX_ON);
@@ -462,6 +488,26 @@ int main(void)
 #endif
     		}
     		switch (evt) {
+    			case evt_Band:
+    				Band = newBand;
+    				if (!rda5807_Set_Band(Band)) {
+    					sprintf(stb, "FM Band:%s", allBands[Band]);//(uint16_t)lBand, (uint16_t)rBand);
+    					showLine(stb, lin3, &lit, true);
+    					Report(1, "[que:%u] set new band=%u '%s'\r\n", cntEvt, Band, allBands[Band]);
+    					if ((Freq < lBand) || (Freq > rBand)) {
+    						newFreq = lBand;
+    						putEvt(evt_Freq);
+    					}
+    				}
+    			break;
+    			/*case evt_Step:
+    				Step = newStep;
+    				if (!rda5807_Set_Step(Step)) {
+    					Report(1, "[que:%u] set new step=%u\r\n", cntEvt, Step);
+    					newFreq = lBand;
+    					putEvt(evt_Freq);
+    				}
+    			break;*/
     			case evt_List:
     				newFreq = getNextList(Freq);
     				putEvt(evt_Freq);
@@ -472,7 +518,7 @@ int main(void)
     					rda5807_SetBassBoost(BassBoost);
     					//
     					sprintf(st, "Vol:%u Bass:%u", Volume, BassBoost);
-    					showLine(st, lin4, &lib, true);
+    					showLine(st, lin4, &lim, true);
     					Report(1, "[que:%u] set new BassBoost to %u\r\n", cntEvt, BassBoost);
     				}
     			break;
@@ -501,7 +547,7 @@ int main(void)
     							sprintf(st, "Rssi:%u Freq:%.1f", RSSI, Freq);
     						showLine(st, lin5, &lil, false);
 
-    						sprintf(sta, "'%s'", nameStation(Freq));
+    						sprintf(sta, "%s", nameStation(Freq));
     						showLine(sta, lin6, &lia, true);
     						Report(1, "[que:%u] set new Freq to %.1f %s (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
     					}
@@ -530,7 +576,8 @@ int main(void)
     						Freq /= 10;
     						scan = 0;
     						Chan = rda5807_Get_Channel();
-    						sprintf(sta, "'%s'", nameStation(Freq));
+    						sprintf(sta, "%s", nameStation(Freq));
+    						showLine(sta, lin6, &lia, true);
     						Report(1, "[que:%u] set new Freq to %.1f %s (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
     					}
     				}
@@ -547,7 +594,7 @@ int main(void)
     					showLine(st, lin5, &lil, false);
 
     					//sprintf(sta, "'%s'", nameStation(Freq));
-    					showLine(sta, lin6, &lia, true);
+    					//showLine(sta, lin6, &lia, true);
     					////Report(1, "ChipID:0x%x Chan:%u Freq:%.2f RSSI:%u\r\n", rdaID, Chan, Freq, RSSI);
 #endif
     				}
@@ -1261,31 +1308,37 @@ int8_t ik = -1;
 	}
 	if (ik != -1) {
 		if (++ik == MAX_LIST) ik = 0;
-		ret = list[ik].freq;
 	} else {
 		for (int8_t i = 0; i < MAX_LIST; i++) {
 			if (list[i].freq > fr) {
 				ik = i;
-				ret = list[i].freq;
 				break;
 			}
 		}
-		if (ik == -1) ret = list[0].freq;
+		if (ik == -1) ik = 0;
 	}
+	ret = list[ik].freq;
 
 	return ret;
 }
 //-------------------------------------------------------------------------------------------
-void showLine(char *msg, uint16_t lin, int *lil, bool update)
+void showLine(char *msg, uint16_t lin, int *last_len, bool update)
 {
 int il = strlen(msg);
+int xf = ( (SCREEN_WIDTH - (lfnt->FontWidth * il) ) >> 1);// & 0x7f;
+bool yes = false;
 
-	//if (*lil > il) {
+	if (*last_len > il) {
 		ST7565_DrawFilledRectangle(2, lin, SCREEN_WIDTH - 4, lfnt->FontHeight, PIX_OFF);
-	//}
-	*lil = il;
-	int xf = ((SCREEN_WIDTH - (lfnt->FontWidth * il)) >> 1) & 0x7f;
-	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
+		yes = true;
+	}
+	*last_len = il;
+	if (*msg > 0x7f) {
+		xf += il;
+	}
+	if (!yes) ST7565_DrawFilledRectangle(2, lin, SCREEN_WIDTH - 4, lfnt->FontHeight, PIX_OFF);
+
+	if ((!xf) || (xf > (SCREEN_WIDTH - 4))) xf = 1;
 	ST7565_Print(xf, lin, msg, lfnt, 1, PIX_ON);
 	if (update) ST7565_Update();
 }
@@ -1508,6 +1561,22 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 						char *uk = rxBuf + strlen(s_cmds[i]);
 						ev = -1;
 						switch (i) {
+							case cmdBand://"band:2"
+								if (strlen(uk) >= 1) {
+									newBand = atol(uk);
+									if (newBand != Band) {
+										ev = i;
+									}
+								}
+							break;
+							/*case cmdStep://"step:0"
+								if (strlen(uk) >= 1) {
+									newStep = atol(uk);
+									if (newStep != Step) {
+										ev = i;
+									}
+								}
+							break;*/
 							case cmdVol:
 								if (strlen(uk) >= 1) {
 									uint8_t nv = Volume;

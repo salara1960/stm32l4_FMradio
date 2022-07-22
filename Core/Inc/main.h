@@ -78,7 +78,9 @@ enum {
 	cmdFreq,
 	cmdVol,
 	cmdBass,
-	cmdList
+	cmdList,
+	cmdBand
+	//cmdStep
 };
 
 enum {
@@ -98,7 +100,9 @@ enum {
 	evt_Freq,
 	evt_Vol,
 	evt_Bass,
-	evt_List
+	evt_List,
+	evt_Band
+	//evt_Step
 };
 
 
@@ -177,8 +181,11 @@ enum {
 
 
 #define MAX_UART_BUF    1024
-#define MAX_CMDS          16
+#define MAX_CMDS          17
 #define MAX_LIST          24
+#define MAX_BAND           4
+#define MAX_STEP           4
+
 
 #ifdef SET_FIFO_MODE
 	#define MAX_FIFO_SIZE 64
@@ -187,7 +194,7 @@ enum {
 
 typedef struct {
 	float freq;
-	char name[16];
+	char name[28];
 } rec_t;
 
 /* USER CODE END EM */
@@ -248,6 +255,8 @@ extern uint8_t spiRdy;
 	extern float lBand, rBand;
 	extern uint8_t Volume;
 	extern uint8_t BassBoost;
+	extern uint8_t Band;// = 2;
+	//extern uint8_t Step;// = 0;
 #endif
 
 /* USER CODE END Private defines */

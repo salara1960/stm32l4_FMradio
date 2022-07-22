@@ -12,6 +12,8 @@
 
 I2C_HandleTypeDef *i2cRDA = &hi2c1;
 Buffs_t Buffs;
+//uint8_t Band = 2;
+//uint8_t Step = 0;
 //
 tRadioState RadioState = Idle;
 tRadioState RadioStateOld = Idle;
@@ -286,8 +288,8 @@ void rda5807_SetupDefault()
     Buffs.Reg02.bDMUTE = 1;
     Buffs.Reg02.bDHIZ = 1;
     // Регистр 0x03
-    Buffs.Reg03.bSPACE = 0;   // Шаг настройки = 100 КГц
-    Buffs.Reg03.bBAND = 2;//0;    // Диапазон 87–108 MHz
+    Buffs.Reg03.bSPACE = 0;//Step;//0;   // Шаг настройки - 0 = 100 КГц
+    Buffs.Reg03.bBAND = Band;//2;//0;    // Диапазон 2 - 76–108 MHz
     Buffs.Reg03.bTUNE = 1;
     Buffs.Reg03.bDIRECT_MODE = 0;
     Buffs.Reg03.bCHAN = 0;
@@ -512,6 +514,62 @@ uint16_t rda5807_Get_Channel()
     return Buffs.Reg0A.bREADCHAN;    // 0-9 Read Channel.
 }
 //==============================================================================
+uint8_t rda5807_Set_Band(uint8_t band)
+{
+	if (band > 3) return 1;
+
+    // Читаем регистр 3
+    rda5807_read(3, (uint16_t *)&Buffs.Reg03, 1);
+
+    Buffs.Reg03.bBAND = band;
+
+    rda5807_write(3, (uint16_t *)&Buffs.Reg03, 1);
+
+    uint16_t l = 870, r = 1080;
+
+    switch (Buffs.Reg03.bBAND) {    // Диапазон 87–108 MHz
+    	//case 0:// 00 = 87–108 MHz (US/Europe)
+    	//break;
+    	case 1:// 01 = 76–91 MHz (Japan)
+    		l = 760;
+    		r = 910;
+    	break;
+    	case 2:// 10 = 76–108 MHz (world wide)
+    		l = 760;
+    	break;
+    	case 3:// 11 = 65 –76 MHz (East Europe) or 50-65MHz
+    		l = 650;
+    		r = 760;
+    	break;
+    }
+    lBand = ((float)l) / 10;
+    rBand = ((float)r) / 10;
+
+    HAL_Delay(50);
+
+    return 0;
+}
+//==============================================================================
+/*
+uint8_t rda5807_Set_Step(uint8_t step)
+{
+	if (step > 3) return 1;
+
+    // Читаем регистр 3
+    rda5807_read(3, (uint16_t *)&Buffs.Reg03, 1);
+
+    Buffs.Reg03.bSPACE = step;
+
+    rda5807_write(0x02, (uint16_t *)&Buffs.Reg03, 1);
+
+    HAL_Delay(50);
+
+    return 0;
+}
+*/
+//==============================================================================
+
+
 
 
 //bREADCHAN

@@ -146,7 +146,6 @@ typedef enum
   BassSet = 4
 } tRadioState;
 
-
 /*
 //Структура регистрового файла rda5807
 typedef union 
@@ -172,6 +171,10 @@ typedef union
   uint8_t Bytes[28];
 } tRDA5807_RegFile;
 */
+
+//extern uint8_t Band;
+//extern uint8_t Step;
+
 
 // Процедура меняет местами байты попарно в буфере pBuff
 void rda5807_bytes_change(uint8_t *pBuff, uint8_t count);
@@ -225,8 +228,9 @@ void rda5807_StartSeek(uint8_t Up);
 uint8_t rda5807_Get_SeekTuneReadyFlag();
 
 bool rda5807_Get_StereoMonoFlag();
-
 uint16_t rda5807_Get_Channel();
+uint8_t rda5807_Set_Band(uint8_t band);
+//uint8_t rda5807_Set_Step(uint8_t step);
 
 #endif
 
