@@ -550,25 +550,6 @@ uint8_t rda5807_Set_Band(uint8_t band)
     return 0;
 }
 //==============================================================================
-/*
-uint8_t rda5807_Set_Step(uint8_t step)
-{
-	if (step > 3) return 1;
-
-    // Читаем регистр 3
-    rda5807_read(3, (uint16_t *)&Buffs.Reg03, 1);
-
-    Buffs.Reg03.bSPACE = step;
-
-    rda5807_write(0x02, (uint16_t *)&Buffs.Reg03, 1);
-
-    HAL_Delay(50);
-
-    return 0;
-}
-*/
-//==============================================================================
-
 
 
 

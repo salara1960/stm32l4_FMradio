@@ -26,7 +26,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#ifdef SET_FAT_FS
+	#include "fatfs.h"
+#endif
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -130,7 +132,6 @@ const char *s_cmds[MAX_CMDS] = {
 	"bass:",
 	"list",
 	"band:"
-	//"step:"
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -150,7 +151,6 @@ const char *str_cmds[MAX_CMDS] = {
 	"BassBoost",
 	"nextStation",
 	"Band"
-	//"Step"
 };
 
 #ifdef SET_FIFO_MODE
@@ -184,6 +184,17 @@ uint8_t spiRdy = 1;
 	bool chipPresent = false;
 	bool validChipID = false;
 	//
+	#ifdef SET_FAT_FS
+		FATFS FatFs;
+		const char *cfg = "radio.cfg";
+		bool cfg_present = false;
+		bool mnt = false;
+		const char *dirName = "/";
+		//bool cat_flag = false;
+		//const char *_cat  = "cat";
+		//bool dir_open = false;
+	#endif
+	//
 #endif
 
 #ifdef SET_DISPLAY
@@ -192,14 +203,12 @@ uint8_t spiRdy = 1;
 #endif
 
 #if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
-	float Freq = 94.0;//96.3;//95.1;
+	float Freq = 76;//94.0;//96.3;//95.1;
 	float newFreq = 95.1;
 	float lBand = 0.0;
 	float rBand = 0.0;
 	uint8_t Band = 2;// :2
 	uint8_t newBand = 2;
-//	uint8_t Step = 0;
-//	uint8_t newStep = 0;
 	uint16_t Chan = 0;
 	uint16_t RSSI = 0;
 	volatile uint8_t i2cRdy = 1;
@@ -292,6 +301,186 @@ float getNextList(float fr);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+#ifdef SET_FAT_FS
+//------------------------------------------------------------------------------------------
+static char *fsErrName(int fr)
+{
+	switch (fr) {
+		case FR_OK:				// (0) Succeeded
+			return "Succeeded";
+		case FR_DISK_ERR://			(1) A hard error occurred in the low level disk I/O layer
+			return "Error disk I/O";
+		case FR_INT_ERR://			(2) Assertion failed
+			return "Assertion failed";
+		case FR_NOT_READY://		(3) The physical drive cannot work
+			return "Drive not ready";
+		case FR_NO_FILE://			(4) Could not find the file
+			return "No file";
+		case FR_NO_PATH://			(5) Could not find the path
+			return "No path";
+		case FR_INVALID_NAME://		(6) The path name format is invalid
+			return "Path error";
+		case FR_DENIED://			(7) Access denied due to prohibited access or directory full
+		case FR_EXIST://			(8) Access denied due to prohibited access
+			return "Access denied";
+		case FR_INVALID_OBJECT://	(9) The file/directory object is invalid
+			return "Invalid file/dir";
+		case FR_WRITE_PROTECTED://	(10) The physical drive is write protected
+			return "Write protected";
+		case FR_INVALID_DRIVE://	(11) The logical drive number is invalid
+			return "Invalid drive number";
+		case FR_NOT_ENABLED://		(12) The volume has no work area
+			return "Volume no area";
+		case FR_NO_FILESYSTEM://	(13) There is no valid FAT volume
+			return "Volume has't filesystem";
+		case FR_MKFS_ABORTED://		(14) The f_mkfs() aborted due to any problem
+			return "f_mkfs() aborted";
+		case FR_TIMEOUT://			(15) Could not get a grant to access the volume within defined period
+			return "Timeout access";
+		case FR_LOCKED://			(16) The operation is rejected according to the file sharing policy
+			return "File locked";
+		case FR_NOT_ENOUGH_CORE://	(17) LFN working buffer could not be allocated
+			return "Allocated buf error";
+		case FR_TOO_MANY_OPEN_FILES://	(18) Number of open files > _FS_LOCK
+			return "Open file limit";
+		case FR_INVALID_PARAMETER://	(19) Given parameter is invalid
+			return "Invalid parameter";
+	}
+	return "Unknown error";
+}
+//------------------------------------------------------------------------------------------
+static char *attrName(uint8_t attr)
+{
+	switch (attr) {
+		case AM_RDO://	0x01	/* Read only */
+			return "Read only";
+		case AM_HID://	0x02	/* Hidden */
+			return "Hidden";
+		case AM_SYS://	0x04	/* System */
+			return "System";
+		case AM_DIR://	0x10	/* Directory */
+			return "Directory";
+		case AM_ARC://	0x20	/* Archive */
+			return "Archive";
+		default : return "Unknown";
+	}
+}
+//------------------------------------------------------------------------------------------
+bool drvMount(const char *path)
+{
+bool ret = false;
+
+	if (!validChipID) return ret;
+
+	FRESULT res = f_mount(&FatFs, path, 1);
+	if (res == FR_NO_FILESYSTEM) {
+		Report(1, "Mount drive '%s' error #%u (%s)\r\n", path, res, fsErrName(res));
+		res = f_mkfs(path, FM_FAT, W25qxx_getBlockSize(), fs_work, sizeof(fs_work));
+		if (!res) {
+			Report(1, "Make FAT fs on drive '%s' OK\r\n", path);
+			res = f_mount(&FatFs, path, 1);
+    	} else {
+    		Report(1, "Make FAT fs error #%u (%s)\r\n", res, fsErrName(res));
+    	}
+	}
+	if (!res) {
+		ret = true;
+		Report(1, "Mount drive '%s' OK\r\n", path);
+	} else {
+		Report(1, "Mount drive '%s' error #%u (%s)\r\n", path, res, fsErrName(res));
+	}
+
+	return ret;
+}
+//------------------------------------------------------------------------------------------
+void dirList(const char *name_dir)
+{
+DIR dir;
+
+	FRESULT res = f_opendir(&dir, name_dir);
+	if (!res) {
+		FILINFO fno;
+		int cnt = -1;
+		Report(1, "Read folder '%s':\r\n", name_dir);
+		for (;;) {
+			res = f_readdir(&dir, &fno);
+			cnt++;
+			if (res || fno.fname[0] == 0) {
+				if (!cnt) Report(0, "\tFolder '%s' is empty\r\n", name_dir);
+				break;
+			} else if (fno.fattrib & AM_DIR) {// It is a directory
+				Report(0, "\tIt is folder -> '%s'\r\n", fno.fname);
+			} else {// It is a file.
+				Report(0, "\tname:%s, size:%u bytes, attr:%s\r\n",
+									fno.fname,
+									fno.fsize,
+									attrName(fno.fattrib));
+			}
+		}
+		f_closedir(&dir);
+	}
+}
+//------------------------------------------------------------------------------------------
+void wrFile(const char *name, const char *text, bool update)
+{
+char tmp[128];
+FIL fp;
+FRESULT res = FR_NO_FILE;
+
+	sprintf(tmp, "/%s", cfg);
+	if (!update) {
+		res = f_open(&fp, tmp, FA_READ);
+		if (res == FR_OK) {
+			res = f_close(&fp);
+			Report(1, "File '%s' allready present and update has't been ordered\r\n", tmp);
+			return;
+		}
+	}
+
+	res = f_open(&fp, tmp, FA_CREATE_ALWAYS | FA_WRITE);
+	if (!res) {
+		//Report(1, "Create new file '%s' OK\r\n", tmp);
+		//int wrt = 0, dl = strlen(text);
+		//wrt =
+		f_puts(text, &fp);
+		/*if (wrt != dl) {
+			devError |= devFS;
+			Report(1, "Error while write file '%s'\r\n", tmp);
+		} else*/
+		Report(1, "File file '%s' write OK\r\n", tmp);
+
+		res = f_close(&fp);
+	} else Report(1, "Create new file '%s' error #%u (%s)\r\n", tmp, res, fsErrName(res));
+
+}
+//------------------------------------------------------------------------------------------
+bool rdFile(const char *name)
+{
+bool ret = false;
+char tmp[128];
+FIL fp;
+
+	if (!f_open(&fp, name, FA_READ)) {
+		Report(1, "File '%s' open for reading OK\r\n", name);
+
+		while (f_gets(tmp, sizeof(tmp) - 1, &fp) != NULL) Report(0, "%s", tmp);
+
+		f_close(&fp);
+
+		ret = true;
+	} else {
+		Report(1, "Error while open for reading file '%s'\r\n", name);
+	}
+
+	return ret;
+}
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+#endif
 
 /* USER CODE END 0 */
 
@@ -330,6 +519,7 @@ int main(void)
   MX_SPI2_Init();
   MX_SPI1_Init();
   MX_I2C1_Init();
+  MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
 
 
@@ -354,7 +544,36 @@ int main(void)
     chipPresent = W25qxx_Init();
     uint32_t cid = W25qxx_getChipID();
     if ( chipPresent && ((cid >= W25Q10) && (cid <= W25Q128)) ) validChipID = true;
-    list_sector = W25qxx_getPageSize() << 1;//2;
+    list_sector = W25qxx_getPageSize() << 1;
+    //
+	#ifdef SET_FAT_FS
+      	mnt = drvMount(USERPath);
+      	if (mnt) {
+      		dirList(dirName);
+      		//
+      		cfg_present = rdFile(cfg);
+      		if (!cfg_present) {
+      			//
+      			char txt[MAX_UART_BUF] = {0};
+      			for (int i = 0; i < MAX_LIST; i++) {
+      				sprintf(txt+strlen(txt), "%.1f:%s\r\n", list[i].freq, list[i].name);
+      			}
+      			wrFile(cfg, txt, true);
+      			//
+      			rdFile(cfg);
+      		}
+      	}
+      	/*if (dir_open) {
+      		f_closedir(&dir);
+      		dir_open = false;
+      		Report(1, "Close dir '%s'\r\n", ps);
+      	}*/
+      	/*if (mnt) {
+      		f_mount(NULL, USERPath, 1);
+      		mnt = false;
+      		Report(1, "Umount drive '%.*s'\r\n", sizeof(USERPath), USERPath);
+      	}*/
+	#endif
 #endif
 
 
@@ -500,14 +719,6 @@ int main(void)
     					}
     				}
     			break;
-    			/*case evt_Step:
-    				Step = newStep;
-    				if (!rda5807_Set_Step(Step)) {
-    					Report(1, "[que:%u] set new step=%u\r\n", cntEvt, Step);
-    					newFreq = lBand;
-    					putEvt(evt_Freq);
-    				}
-    			break;*/
     			case evt_List:
     				newFreq = getNextList(Freq);
     				putEvt(evt_Freq);
@@ -711,6 +922,14 @@ int main(void)
 #if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
 
 #endif
+#ifdef SET_FAT_FS
+    if (mnt) {
+    	f_mount(NULL, USERPath, 1);
+    	//mnt = false;
+    	Report(1, "Umount drive '%.*s'\r\n", sizeof(USERPath), USERPath);
+    }
+#endif
+
     Report(1, "[que:%u] Stop application...\r\n", cntEvt);
 
     HAL_Delay(500);
@@ -1569,14 +1788,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 									}
 								}
 							break;
-							/*case cmdStep://"step:0"
-								if (strlen(uk) >= 1) {
-									newStep = atol(uk);
-									if (newStep != Step) {
-										ev = i;
-									}
-								}
-							break;*/
 							case cmdVol:
 								if (strlen(uk) >= 1) {
 									uint8_t nv = Volume;

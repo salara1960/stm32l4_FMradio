@@ -17,6 +17,8 @@
 
 #define SET_NEW_RDA
 
+#define SET_FAT_FS
+
 
 
 

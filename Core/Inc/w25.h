@@ -142,8 +142,6 @@ void W25qxx_ReadBlock(uint8_t *pBuffer, uint32_t Block_Address, uint32_t OffsetI
 void W25qxx_RdSec(uint8_t *pBuffer, uint32_t Sector_Address, uint32_t OffsetInByte, uint32_t NumByteToRead_up_to_SectorSize);
 
 
-
-
 #endif
 
 #endif /* __W25_H__ */

@@ -59,7 +59,8 @@ enum {
 	devSYS = 0x20,
 	devSPI = 0x40,
 	devLCD = 0x80,
-	devRDA = 0x100
+	devRDA = 0x100,
+	devFS = 0x200
 };
 
 enum {
@@ -102,7 +103,6 @@ enum {
 	evt_Bass,
 	evt_List,
 	evt_Band
-	//evt_Step
 };
 
 
@@ -111,7 +111,6 @@ enum {
 	#include "w25.h"
 #endif
 #ifdef SET_DISPLAY
-	//#include "fonts.h"
 	#include "ST7565.h"
 #endif
 #ifdef SET_RDA_CHIP
@@ -258,6 +257,8 @@ extern uint8_t spiRdy;
 	extern uint8_t Band;// = 2;
 	//extern uint8_t Step;// = 0;
 #endif
+
+
 
 /* USER CODE END Private defines */
 

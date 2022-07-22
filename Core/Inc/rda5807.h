@@ -230,7 +230,6 @@ uint8_t rda5807_Get_SeekTuneReadyFlag();
 bool rda5807_Get_StereoMonoFlag();
 uint16_t rda5807_Get_Channel();
 uint8_t rda5807_Set_Band(uint8_t band);
-//uint8_t rda5807_Set_Step(uint8_t step);
 
 #endif
 
