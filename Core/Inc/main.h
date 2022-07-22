@@ -190,11 +190,13 @@ enum {
 	#define MAX_FIFO_SIZE 64
 #endif
 
-
+#define MAX_SIZE_NAME     28
+#pragma pack(push,1)
 typedef struct {
 	float freq;
-	char name[28];
+	char name[MAX_SIZE_NAME];
 } rec_t;
+#pragma pack(pop)
 
 /* USER CODE END EM */
 

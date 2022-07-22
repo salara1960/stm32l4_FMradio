@@ -82,7 +82,7 @@ DMA_HandleTypeDef hdma_usart2_tx;
 //const char *ver = "0.9.4 20.07.22";
 //const char *ver = "1.0 21.07.22";//add two button KEY0 & KEY1 (scan_up & scan_down)
 //const char *ver = "1.1 21.07.22";//add new command 'list'
-const char *ver = "1.2 22.07.22";//add select band feature
+const char *ver = "1.2 22.07.22";//add select band feature + fatfs
 
 
 
@@ -107,7 +107,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1658501279;
+static uint32_t epoch = 1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
 //1657971799;1657915595;1657635512;1657313424;//1657283440;//1657234028;//1657200272;//1657194633;//1657144926;
 bool setDate = false;
@@ -171,10 +171,6 @@ uint32_t spi_cnt = 0;
 uint8_t spiRdy = 1;
 //
 #ifdef SET_W25FLASH
-	/*const char *_read  = "read";
-	const char *_write  = "write";
-	const char *_erase  = "erase";
-	const char *_next  = "next";*/
 	int adr_sector = 0, offset_sector = 0, list_sector = 0, len_write = 0;
 	int cmd_sector = sNone, last_cmd_sector = sNone;
 	uint8_t byte_write = 0xff;
@@ -190,9 +186,6 @@ uint8_t spiRdy = 1;
 		bool cfg_present = false;
 		bool mnt = false;
 		const char *dirName = "/";
-		//bool cat_flag = false;
-		//const char *_cat  = "cat";
-		//bool dir_open = false;
 	#endif
 	//
 #endif
@@ -222,7 +215,7 @@ uint8_t spiRdy = 1;
 	bool stereo = false;
 	//
 	const char *noneStation = "???";
-	static const rec_t list[MAX_LIST] = {
+	static const rec_t def_list[MAX_LIST] = {
 		{72.1, "Шансон"},// Шансон
 		{93.6, "Радио_7"},// Радио 7
 		{94.0, "Комеди_Радио"},// Комеди Радио
@@ -248,6 +241,7 @@ uint8_t spiRdy = 1;
 		{106.4, "Радио_Максим"},// Радио Максим
 		{107.2, "Радио_КП"}// Комсомольская Правда
 	};
+	rec_t list[MAX_LIST];
 	uint16_t listSize = 0;
 	//
 	const char *allBands[MAX_BAND] = {
@@ -256,12 +250,6 @@ uint8_t spiRdy = 1;
 		"76-108 MHz",// (world wide)",
 		"65-76 MHz"// (East Europe) or 50-65MHz"
 	};
-	/*const char *allSteps[MAX_STEP] = {
-		"100 kHz",
-		"200 kHz",
-		"50 kHz",
-		"25 KHz"
-	};*/
 
 #endif
 
@@ -457,16 +445,19 @@ FRESULT res = FR_NO_FILE;
 
 }
 //------------------------------------------------------------------------------------------
-bool rdFile(const char *name)
+bool rdFile(const char *name, char *txt)
 {
 bool ret = false;
 char tmp[128];
 FIL fp;
 
+	*txt = '\0';
 	if (!f_open(&fp, name, FA_READ)) {
 		Report(1, "File '%s' open for reading OK\r\n", name);
-
-		while (f_gets(tmp, sizeof(tmp) - 1, &fp) != NULL) Report(0, "%s", tmp);
+		while (f_gets(tmp, sizeof(tmp) - 1, &fp) != NULL) {
+			strcat(txt, tmp);
+			//Report(0, "%s", tmp);
+		}
 
 		f_close(&fp);
 
@@ -546,33 +537,59 @@ int main(void)
     if ( chipPresent && ((cid >= W25Q10) && (cid <= W25Q128)) ) validChipID = true;
     list_sector = W25qxx_getPageSize() << 1;
     //
+    listSize = sizeof(rec_t) * MAX_LIST;
+    memset((uint8_t *)&list[0].freq, 0, listSize);
+    //
 	#ifdef SET_FAT_FS
+    	int8_t ix = 0;
       	mnt = drvMount(USERPath);
       	if (mnt) {
       		dirList(dirName);
       		//
-      		cfg_present = rdFile(cfg);
+      		char txt[MAX_UART_BUF] = {0};
+      		cfg_present = rdFile(cfg, txt);
       		if (!cfg_present) {
       			//
-      			char txt[MAX_UART_BUF] = {0};
       			for (int i = 0; i < MAX_LIST; i++) {
-      				sprintf(txt+strlen(txt), "%.1f:%s\r\n", list[i].freq, list[i].name);
+      				sprintf(txt+strlen(txt), "%.1f:%s\r\n", def_list[i].freq, def_list[i].name);
       			}
       			wrFile(cfg, txt, true);
       			//
-      			rdFile(cfg);
+      			cfg_present = rdFile(cfg, txt);
       		}
-      	}
-      	/*if (dir_open) {
-      		f_closedir(&dir);
-      		dir_open = false;
-      		Report(1, "Close dir '%s'\r\n", ps);
-      	}*/
-      	/*if (mnt) {
+      		if (cfg_present) {
+      			char *uks = txt, *uke = NULL, *uend = txt + strlen(txt);
+      			char tmp[64] = {0};
+      			while (uks < uend) {
+      				uke = strstr(uks, "\r\n");
+      				if (uke) {
+      					memset(tmp, 0, sizeof(tmp));
+      					memcpy(tmp, uks, uke - uks);
+      					uks = uke + 2;
+      					uke = strchr(tmp, ':');
+      					if (uke) {
+      						strncpy(&list[ix].name[0], uke + 1, MAX_SIZE_NAME - 1);
+      						*uke = '\0';
+      					}
+      					list[ix].freq = (float)atof(tmp);
+      					//Report(0, "%.1f:%s\r\n", list[ix].freq, list[ix].name);
+      					if (++ix == MAX_LIST) break;
+      				} else {
+      					break;
+      				}
+      			}
+      			Report(1, "Readed %d records from '%s' file\r\n", ix, cfg);
+      		}
       		f_mount(NULL, USERPath, 1);
       		mnt = false;
       		Report(1, "Umount drive '%.*s'\r\n", sizeof(USERPath), USERPath);
-      	}*/
+      	}
+      	if (!ix) {
+      		memcpy((uint8_t *)&list[0].freq, (uint8_t *)&def_list[0].freq, listSize);
+      		devError |= devFS;
+      	}
+	#else
+      	memcpy((uint8_t *)&list[0].freq, (uint8_t *)&def_list[0].freq, listSize);
 	#endif
 #endif
 
