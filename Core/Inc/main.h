@@ -119,9 +119,6 @@ enum {
 	#include "ST7565.h"
 #endif
 #ifdef SET_RDA_CHIP
-	#include "rda5807m.h"
-#endif
-#ifdef SET_NEW_RDA
 	#include "rda5807.h"
 #endif
 
@@ -256,7 +253,7 @@ extern char rxBuf[MAX_UART_BUF];
 extern uint32_t spi_cnt;
 extern uint8_t spiRdy;
 
-#if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
+#ifdef SET_RDA_CHIP
 	extern volatile uint8_t i2cRdy;
 	extern float lBand, rBand;
 	extern uint8_t Volume;

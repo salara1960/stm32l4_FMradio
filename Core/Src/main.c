@@ -83,7 +83,7 @@ DMA_HandleTypeDef hdma_usart2_tx;
 //const char *ver = "1.0 21.07.22";//add two button KEY0 & KEY1 (scan_up & scan_down)
 //const char *ver = "1.1 21.07.22";//add new command 'list'
 //const char *ver = "1.2 22.07.22";//add select band feature + fatfs
-const char *ver = "1.2.1 23.07.22";
+const char *ver = "1.3 23.07.22";
 
 
 
@@ -108,7 +108,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
+static uint32_t epoch = 1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
 //1657971799;1657915595;1657635512;1657313424;//1657283440;//1657234028;//1657200272;//1657194633;//1657144926;
 bool setDate = false;
@@ -203,7 +203,7 @@ uint8_t spiRdy = 1;
 	FontDef_t *lfnt = NULL;
 #endif
 
-#if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
+#ifdef SET_RDA_CHIP
 	float Freq = 76;//94.0;//96.3;//95.1;
 	float newFreq = 95.1;
 	float lBand = 0.0;
@@ -221,7 +221,7 @@ uint8_t spiRdy = 1;
 	uint8_t BassBoost = 0;
 	uint8_t newBassBoost = 0;
 	bool stereo = false;
-	bool noMute = true;
+	uint8_t noMute = 1;
 	//
 	const char *noneStation = "???";
 	static const rec_t def_list[MAX_LIST] = {
@@ -437,14 +437,7 @@ FRESULT res = FR_NO_FILE;
 
 	res = f_open(&fp, tmp, FA_CREATE_ALWAYS | FA_WRITE);
 	if (!res) {
-		//Report(1, "Create new file '%s' OK\r\n", tmp);
-		//int wrt = 0, dl = strlen(text);
-		//wrt =
 		f_puts(text, &fp);
-		/*if (wrt != dl) {
-			devError |= devFS;
-			Report(1, "Error while write file '%s'\r\n", tmp);
-		} else*/
 		Report(1, "File file '%s' write OK\r\n", tmp);
 
 		res = f_close(&fp);
@@ -580,7 +573,6 @@ int main(void)
       						*uke = '\0';
       					}
       					list[ix].freq = (float)atof(tmp);
-      					//Report(0, "%.1f:%s\r\n", list[ix].freq, list[ix].name);
       					if (++ix == MAX_LIST) break;
       				} else {
       					break;
@@ -588,9 +580,6 @@ int main(void)
       			}
       			Report(1, "Readed %d records from '%s' file\r\n", ix, cfg);
       		}
-      		//f_mount(NULL, USERPath, 1);
-      		//mnt = false;
-      		//Report(1, "Umount drive '%.*s'\r\n", sizeof(USERPath), USERPath);
       	}
       	if (!ix) {
       		memcpy((uint8_t *)&list[0].freq, (uint8_t *)&def_list[0].freq, listSize);
@@ -603,25 +592,6 @@ int main(void)
 
 
 #ifdef SET_RDA_CHIP
-
-    RDA5807m_Reset();
-
-    if (!(devError & devRDA)) rdaID = RDA5807m_ID();
-
-    if (!(devError & devRDA)) RDA5807m_Init();
-
-    if (!(devError & devRDA)) RDA5807m_SetBand(BAND_76_108);
-    if (!(devError & devRDA)) RDA5807m_SetStep(STEP_100);
-    if (!(devError & devRDA)) RDA5807m_SetFreq(Freq);
-    if (!(devError & devRDA)) RDA5807m_Seek();
-
-    if (!(devError & devRDA)) Chan = RDA5807m_GetChan();
-    if (!(devError & devRDA)) RSSI = RDA5807m_GetRSSI();
-    if (!(devError & devRDA)) Freq = RDA5807m_GetFreq();
-
-#endif
-
-#ifdef SET_NEW_RDA
 
     rdaID = rda5807_init(&Freq);
     RSSI = rda5807_rssi();
@@ -659,7 +629,7 @@ int main(void)
     uint16_t x = ((SCREEN_WIDTH - (Font_6x8.FontWidth * dl)) >> 1) & 0x7f;
     ST7565_Print(x, SCREEN_HEIGHT - Font_6x8.FontHeight, tmp, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
 
-	#if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
+	#ifdef SET_RDA_CHIP
     	int il = sprintf(st, "RDA5807 chipID:0x%x", rdaID);
     	uint16_t xf = ((SCREEN_WIDTH - (Font_6x8.FontWidth * il)) >> 1) & 0x7f;
     	if (!xf) xf = 1;
@@ -671,7 +641,7 @@ int main(void)
     	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
     	ST7565_Print(xf, lin3, stb, &Font_6x8, 1, PIX_ON);
 
-    	int im = sprintf(st, "Vol:%u Bass:%u", Volume, BassBoost);
+    	int im = sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
     	int lim = im;
     	xf = ((SCREEN_WIDTH - (Font_6x8.FontWidth * im)) >> 1) & 0x7f;
     	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
@@ -761,7 +731,10 @@ int main(void)
     					BassBoost = newBassBoost;
     					rda5807_SetBassBoost(BassBoost);
     					//
-    					sprintf(st, "Vol:%u Bass:%u", Volume, BassBoost);
+    					if (noMute)
+    						sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
+    					else
+    						sprintf(st, "Bass:%u Vol:%u M", BassBoost, Volume);
     					showLine(st, lin4, &lim, true);
     					Report(1, "[que:%u] set new BassBoost to %u\r\n", cntEvt, BassBoost);
     				}
@@ -772,23 +745,23 @@ int main(void)
     					rda5807_SetVolume(Volume);
     					//
     					if (noMute)
-    						sprintf(st, "Vol:%u BassEn:%u", Volume, BassBoost);
+    						sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
     					else
-    						sprintf(st, "Vol:%u BassEn:%u M", Volume, BassBoost);
+    						sprintf(st, "Bass:%u Vol:%u M", BassBoost, Volume);
     					showLine(st, lin4, &lim, true);
     					Report(1, "[que:%u] set new Volume to %u\r\n", cntEvt, Volume);
     				}
     			break;
     			case evt_Mute:
-    				if (noMute) noMute = false; else noMute = true;
+    				noMute = (~noMute) & 1;
     				rda5807_Set_Mute(noMute);
     				//
     				if (noMute)
-    					sprintf(st, "Vol:%u BassEn:%u", Volume, BassBoost);
+    					sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
     				else
-    					sprintf(st, "Vol:%u BassEn:%u M", Volume, BassBoost);
+    					sprintf(st, "Bass:%u Vol:%u M", BassBoost, Volume);
     				showLine(st, lin4, &lim, true);
-    				Report(1, "[que:%u] set Mute to %d\r\n", cntEvt, noMute);
+    				Report(1, "[que:%u] set Mute to %u\r\n", cntEvt, (~noMute) & 1);
     			break;
     			case evt_Freq:
     				if ((newFreq >= lBand) && (newFreq <= rBand)) {
@@ -829,7 +802,7 @@ int main(void)
 #endif
     				//
     				if (scan) {
-    					if (rda5807_Get_SeekTuneReadyFlag()) {//RadioNewState(Idle, 10);
+    					if (rda5807_Get_SeekTuneReadyFlag()) {
     						Freq = (float)rda5807_GetFreq_In100Khz();
     						Freq /= 10;
     						scan = 0;
@@ -988,9 +961,7 @@ int main(void)
     ST7565_Reset();
     ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
 #endif
-#if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
 
-#endif
 #ifdef SET_FAT_FS
     if (mnt) {
     	f_mount(NULL, USERPath, 1);
@@ -2045,7 +2016,7 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 //--------------------------------------------------------------------------------------------
 void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
-#if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
+#ifdef SET_RDA_CHIP
 	if (hi2c->Instance == I2C1) {
 		i2cRdy = 1;
 	}
@@ -2054,7 +2025,7 @@ void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
 //--------------------------------------------------------------------------------------------
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
-#if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
+#ifdef SET_RDA_CHIP
 	if (hi2c->Instance == I2C1) {
 		devError |= devRDA;
 	}
