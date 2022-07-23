@@ -78,10 +78,12 @@ enum {
 	cmdScan,
 	cmdFreq,
 	cmdVol,
+	cmdMute,
 	cmdBass,
 	cmdList,
-	cmdBand
-	//cmdStep
+	cmdBand,
+	cmdDir,
+	cmdCat
 };
 
 enum {
@@ -100,9 +102,12 @@ enum {
 	evt_Scan,
 	evt_Freq,
 	evt_Vol,
+	evt_Mute,
 	evt_Bass,
 	evt_List,
-	evt_Band
+	evt_Band,
+	evt_Dir,
+	evt_Cat
 };
 
 
@@ -180,7 +185,7 @@ enum {
 
 
 #define MAX_UART_BUF    1024
-#define MAX_CMDS          17
+#define MAX_CMDS          20
 #define MAX_LIST          24
 #define MAX_BAND           4
 #define MAX_STEP           4
@@ -257,7 +262,6 @@ extern uint8_t spiRdy;
 	extern uint8_t Volume;
 	extern uint8_t BassBoost;
 	extern uint8_t Band;// = 2;
-	//extern uint8_t Step;// = 0;
 #endif
 
 

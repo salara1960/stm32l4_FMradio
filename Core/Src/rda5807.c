@@ -550,8 +550,16 @@ uint8_t rda5807_Set_Band(uint8_t band)
     return 0;
 }
 //==============================================================================
+void rda5807_Set_Mute(bool mute)
+{
+	// Читаем регистр 2
+	rda5807_read(2, (uint16_t *)&Buffs.Reg02, 1);
 
+	Buffs.Reg02.bDMUTE = mute;
 
+	rda5807_write(2, (uint16_t *)&Buffs.Reg02, 1);
+}
+//==============================================================================
 
 //bREADCHAN
 

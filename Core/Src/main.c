@@ -82,7 +82,8 @@ DMA_HandleTypeDef hdma_usart2_tx;
 //const char *ver = "0.9.4 20.07.22";
 //const char *ver = "1.0 21.07.22";//add two button KEY0 & KEY1 (scan_up & scan_down)
 //const char *ver = "1.1 21.07.22";//add new command 'list'
-const char *ver = "1.2 22.07.22";//add select band feature + fatfs
+//const char *ver = "1.2 22.07.22";//add select band feature + fatfs
+const char *ver = "1.2.1 23.07.22";
 
 
 
@@ -107,7 +108,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1658529249;//1658521643;//1658501279;
+static uint32_t epoch = 1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
 //1657971799;1657915595;1657635512;1657313424;//1657283440;//1657234028;//1657200272;//1657194633;//1657144926;
 bool setDate = false;
@@ -129,9 +130,12 @@ const char *s_cmds[MAX_CMDS] = {
 	"scan",
 	"freq:",
 	"vol:",
+	"mute",
 	"bass:",
 	"list",
-	"band:"
+	"band:",
+	"dir",
+	"cat"
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -148,9 +152,12 @@ const char *str_cmds[MAX_CMDS] = {
 	"Scan",
 	"setFreq",
 	"Volume",
+	"muteRadio",
 	"BassBoost",
 	"nextStation",
-	"Band"
+	"Band",
+	"Folders",
+	"catCfg"
 };
 
 #ifdef SET_FIFO_MODE
@@ -179,6 +186,7 @@ uint8_t spiRdy = 1;
 	char strf[1024] = {0};
 	bool chipPresent = false;
 	bool validChipID = false;
+	uint32_t btime = 0, etime = 0;
 	//
 	#ifdef SET_FAT_FS
 		FATFS FatFs;
@@ -213,6 +221,7 @@ uint8_t spiRdy = 1;
 	uint8_t BassBoost = 0;
 	uint8_t newBassBoost = 0;
 	bool stereo = false;
+	bool noMute = true;
 	//
 	const char *noneStation = "???";
 	static const rec_t def_list[MAX_LIST] = {
@@ -289,8 +298,6 @@ float getNextList(float fr);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-//------------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------
 #ifdef SET_FAT_FS
 //------------------------------------------------------------------------------------------
@@ -455,8 +462,10 @@ FIL fp;
 	if (!f_open(&fp, name, FA_READ)) {
 		Report(1, "File '%s' open for reading OK\r\n", name);
 		while (f_gets(tmp, sizeof(tmp) - 1, &fp) != NULL) {
-			strcat(txt, tmp);
-			//Report(0, "%s", tmp);
+			if (txt)
+				strcat(txt, tmp);
+			else
+				Report(0, "%s", tmp);
 		}
 
 		f_close(&fp);
@@ -469,9 +478,8 @@ FIL fp;
 	return ret;
 }
 //------------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------
 #endif
+//------------------------------------------------------------------------------------------
 
 /* USER CODE END 0 */
 
@@ -580,9 +588,9 @@ int main(void)
       			}
       			Report(1, "Readed %d records from '%s' file\r\n", ix, cfg);
       		}
-      		f_mount(NULL, USERPath, 1);
-      		mnt = false;
-      		Report(1, "Umount drive '%.*s'\r\n", sizeof(USERPath), USERPath);
+      		//f_mount(NULL, USERPath, 1);
+      		//mnt = false;
+      		//Report(1, "Umount drive '%.*s'\r\n", sizeof(USERPath), USERPath);
       	}
       	if (!ix) {
       		memcpy((uint8_t *)&list[0].freq, (uint8_t *)&def_list[0].freq, listSize);
@@ -736,6 +744,14 @@ int main(void)
     					}
     				}
     			break;
+#ifdef SET_FAT_FS
+    			case evt_Dir:
+    				if (mnt) dirList(dirName);
+    			break;
+    			case evt_Cat:
+    				if (mnt) rdFile(cfg, NULL);
+    			break;
+#endif
     			case evt_List:
     				newFreq = getNextList(Freq);
     				putEvt(evt_Freq);
@@ -755,10 +771,24 @@ int main(void)
     					Volume = newVolume;
     					rda5807_SetVolume(Volume);
     					//
-    					sprintf(st, "Vol:%u BassEn:%u", Volume, BassBoost);
+    					if (noMute)
+    						sprintf(st, "Vol:%u BassEn:%u", Volume, BassBoost);
+    					else
+    						sprintf(st, "Vol:%u BassEn:%u M", Volume, BassBoost);
     					showLine(st, lin4, &lim, true);
     					Report(1, "[que:%u] set new Volume to %u\r\n", cntEvt, Volume);
     				}
+    			break;
+    			case evt_Mute:
+    				if (noMute) noMute = false; else noMute = true;
+    				rda5807_Set_Mute(noMute);
+    				//
+    				if (noMute)
+    					sprintf(st, "Vol:%u BassEn:%u", Volume, BassBoost);
+    				else
+    					sprintf(st, "Vol:%u BassEn:%u M", Volume, BassBoost);
+    				showLine(st, lin4, &lim, true);
+    				Report(1, "[que:%u] set Mute to %d\r\n", cntEvt, noMute);
     			break;
     			case evt_Freq:
     				if ((newFreq >= lBand) && (newFreq <= rBand)) {
@@ -903,9 +933,15 @@ int main(void)
     			}
     			break;
     			case evt_sErase:
-    				W25qxx_EraseSector(adr_sector);
-    				Report(0, "Erase sector:%d done\r\n", adr_sector);
-    				break;
+    				if (adr_sector == -1) {
+    					Report(1, "Erase flash");
+    					flag_sector = true;
+    					btime = HAL_GetTick();
+    				} else {
+    					W25qxx_EraseSector(adr_sector);
+    					Report(1, "Erase sector:%d done\r\n", adr_sector);
+    				}
+    			break;
 #endif
     		}
     		if ((evt >= evt_sRead) && (evt <= evt_sWrite)) {
@@ -914,6 +950,22 @@ int main(void)
     		}
     	}
 #endif
+
+#ifdef SET_W25FLASH
+    	if (flag_sector) {
+    		adr_sector++;
+    		if (adr_sector >= W25qxx_getSectorCount()) {
+    			flag_sector = false;
+    			etime = HAL_GetTick();
+    			Report(0, " done (%lu sec)\r\n", (etime - btime) / 1000);
+    		} else {
+    			//putEvt(evt_sErase);
+    			W25qxx_EraseSector(adr_sector);
+    			if (!(adr_sector % 8)) Report(0, ".");
+    		}
+    	}
+#endif
+
 
     	if (devError) {
     		errLedOn(true);
@@ -928,7 +980,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    }
+    }//while (!restart)
 
     HAL_TIM_Base_Stop_IT(tikPort);
 
@@ -942,7 +994,7 @@ int main(void)
 #ifdef SET_FAT_FS
     if (mnt) {
     	f_mount(NULL, USERPath, 1);
-    	//mnt = false;
+    	mnt = false;
     	Report(1, "Umount drive '%.*s'\r\n", sizeof(USERPath), USERPath);
     }
 #endif
@@ -1840,13 +1892,18 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 								ev = i;
 								char *uki = strchr(uk, ':');
 								if (uki) {
-									if (*(char *)(uki + 1) == '0') seek_up = 0;
+									if ((*(char *)(uki + 1) == '0') || strstr(uki + 1, "down")) seek_up = 0;
 								}
 							break;
 							case cmdClr://"clr"
 							case cmdHelp://"help"
 							case cmdVer://"ver"
-							case cmdList:
+							case cmdList://"list"
+							case cmdMute://"mute"
+#ifdef SET_FAT_FS
+							case cmdCat://"cat"
+							case cmdDir://"dir"
+#endif
 								ev = i;
 							break;
 							case cmdRestart://"restart" -> restart = 1;
@@ -1871,10 +1928,14 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 											  else cmd_sector = cmdsErase;
 								if (*uk == ':') {
 									int sek = atoi(++uk);
-									if ((sek >= 0) && (sek < W25qxx_getSectorCount())) {
+									if ( ((sek >= 0) && (sek < W25qxx_getSectorCount())) || (sek == -1) ) {
 										adr_sector = sek;
 										offset_sector = 0;
-										ev = i;//flag_sector = true;
+										if (sek == -1) {
+											if (cmd_sector == cmdsErase) ev = i;
+										} else {
+											ev = i;
+										}
 									}
 								}
 							break;
