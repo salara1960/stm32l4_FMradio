@@ -83,13 +83,15 @@ DMA_HandleTypeDef hdma_usart2_tx;
 //const char *ver = "1.0 21.07.22";//add two button KEY0 & KEY1 (scan_up & scan_down)
 //const char *ver = "1.1 21.07.22";//add new command 'list'
 //const char *ver = "1.2 22.07.22";//add select band feature + fatfs
-const char *ver = "1.3 23.07.22";
+//const char *ver = "1.3 23.07.22";
+const char *ver = "1.4 24.07.22";// new feature for 'list' command
 
 
 
 char stx[MAX_UART_BUF] = {0};
 char tmp[128] = {0};
 char cmdBuf[MAX_UART_BUF] = {0};
+char strf[MAX_UART_BUF] = {0};
 uint16_t devError = HAL_OK;
 
 volatile static uint32_t secCounter = 0;//period 1s
@@ -108,7 +110,8 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
+static uint32_t epoch = 1658673059;//1658665853;
+//1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
 //1657971799;1657915595;1657635512;1657313424;//1657283440;//1657234028;//1657200272;//1657194633;//1657144926;
 bool setDate = false;
@@ -135,6 +138,7 @@ const char *s_cmds[MAX_CMDS] = {
 	"list",
 	"band:",
 	"dir",
+	"cfg",
 	"cat"
 };
 const char *str_cmds[MAX_CMDS] = {
@@ -157,7 +161,8 @@ const char *str_cmds[MAX_CMDS] = {
 	"nextStation",
 	"Band",
 	"Folders",
-	"catCfg"
+	"fileCfg",
+	"catList"
 };
 
 #ifdef SET_FIFO_MODE
@@ -169,6 +174,7 @@ const char *str_cmds[MAX_CMDS] = {
 	uint8_t max_evt = 0;
 	bool lock_fifo = false;
 	int evt = evt_None;
+	int next_evt = evt_None;
 	volatile uint8_t cntEvt = 0;
 #endif
 
@@ -183,7 +189,6 @@ uint8_t spiRdy = 1;
 	uint8_t byte_write = 0xff;
 	bool flag_sector = false;
 	unsigned char fs_work[_MAX_SS] = {0};
-	char strf[1024] = {0};
 	bool chipPresent = false;
 	bool validChipID = false;
 	uint32_t btime = 0, etime = 0;
@@ -225,30 +230,33 @@ uint8_t spiRdy = 1;
 	//
 	const char *noneStation = "???";
 	static const rec_t def_list[MAX_LIST] = {
-		{72.1, "Шансон"},// Шансон
-		{93.6, "Радио_7"},// Радио 7
-		{94.0, "Комеди_Радио"},// Комеди Радио
-		{95.1, "Вести_ФМ"},// Вести ФМ
-		{95.5, "Ретро_ФМ"},// Ретро ФМ
-		{96.3, "Русское_Радио"},// Русское Радио
-		{97.0, "Радио_Вера"},// Радио Книга
-		{97.9, "Серебр.Дождь"},// Серебрянный Дождь
-		{98.5, "Радио_Энергия"},// Радио Энергия
-		{99.5, "Радио_Звезда"},// Радио Звезда
-		{100.1, "Авто_Радио"},// АвтоРадио
-		{100.6, "Русский_Край"},// Русский Край
-		{100.9, "Монте-Карло"},// Монте-Карло
-		{101.3, "Наше_Радио"},// Наше Радио
-		{101.8, "Бизнес_ФМ"},// Бизнес ФМ
-		{102.5, "Маяк"},// Маяк
-		{102.9, "Любимое_Радио"},// Любимое Радио
-		{103.4, "Студия_21"},// Студия 21
-		{103.9, "Радио_России"},// Радио России
-		{104.5, "Европа_Плюс"},// Европа Плюс
-		{105.2, "Балтик_Плюс"},// Балтик Плюс
-		{105.9, "Дорожное_Радио"},// Дорожное Радио
-		{106.4, "Радио_Максим"},// Радио Максим
-		{107.2, "Радио_КП"}// Комсомольская Правда
+		//Band:3 65-76
+		{3, 68.5, "Маяк"},// Маяк
+		{3, 72.1, "Шансон"},// Шансон
+		//Band:2,1 76-108, 87-108
+		{2, 93.6, "Радио_7"},// Радио 7
+		{2, 94.0, "Комеди_Радио"},// Комеди Радио
+		{2, 95.1, "Вести_ФМ"},// Вести ФМ
+		{2, 95.5, "Ретро_ФМ"},// Ретро ФМ
+		{2, 96.3, "Русское_Радио"},// Русское Радио
+		{2, 97.0, "Радио_Вера"},// Радио Книга
+		{2, 97.9, "Серебр.Дождь"},// Серебрянный Дождь
+		{2, 98.5, "Радио_Энергия"},// Радио Энергия
+		{2, 99.5, "Радио_Звезда"},// Радио Звезда
+		{2, 100.1, "Авто_Радио"},// АвтоРадио
+		{2, 100.6, "Русский_Край"},// Русский Край
+		{2, 100.9, "Монте-Карло"},// Монте-Карло
+		{2, 101.3, "Наше_Радио"},// Наше Радио
+		{2, 101.8, "Бизнес_ФМ"},// Бизнес ФМ
+		{2, 102.5, "Маяк"},// Маяк
+		{2, 102.9, "Любимое_Радио"},// Любимое Радио
+		{2, 103.4, "Студия_21"},// Студия 21
+		{2, 103.9, "Радио_России"},// Радио России
+		{2, 104.5, "Европа_Плюс"},// Европа Плюс
+		{2, 105.2, "Балтик_Плюс"},// Балтик Плюс
+		{2, 105.9, "Дорожное_Радио"},// Дорожное Радио
+		{2, 106.4, "Радио_Максим"},// Радио Максим
+		{2, 107.2, "Радио_КП"}// Комсомольская Правда
 	};
 	rec_t list[MAX_LIST];
 	uint16_t listSize = 0;
@@ -291,7 +299,7 @@ int sec2str(char *st);
 void Report(const uint8_t addTime, const char *fmt, ...);
 void showLine(char *msg, uint16_t lin, int *lil, bool update);
 const char *nameStation(float fr);
-float getNextList(float fr);
+float getNextList(float fr, uint8_t up, uint8_t *band);
 
 
 /* USER CODE END PFP */
@@ -426,22 +434,30 @@ FIL fp;
 FRESULT res = FR_NO_FILE;
 
 	sprintf(tmp, "/%s", cfg);
-	if (!update) {
+	if (update) {
 		res = f_open(&fp, tmp, FA_READ);
 		if (res == FR_OK) {
 			res = f_close(&fp);
-			Report(1, "File '%s' allready present and update has't been ordered\r\n", tmp);
-			return;
+			Report(1, "[%s] File '%s' allready present. Delete file...\r\n", __func__, tmp);
+			if ((res = f_unlink(tmp)) == FR_OK) {
+				Report(1, "[%s] File '%s' delete OK\r\n", __func__, tmp);
+			} else {
+				Report(1, "[%s] File '%s' delete Error:%d(%s)\r\n", __func__, tmp, res, fsErrName(res));
+			}
+			//return;
 		}
 	}
 
 	res = f_open(&fp, tmp, FA_CREATE_ALWAYS | FA_WRITE);
 	if (!res) {
+		UINT len = strlen(text);
+		//UINT wrt = 0;
+		//res = f_write(&fp, text, len, &wrt);
 		f_puts(text, &fp);
-		Report(1, "File file '%s' write OK\r\n", tmp);
+		Report(1, "[%s] File '%s' write OK (len=%lu)\r\n", __func__, tmp, len);
 
 		res = f_close(&fp);
-	} else Report(1, "Create new file '%s' error #%u (%s)\r\n", tmp, res, fsErrName(res));
+	} else Report(1, "[%s] Create new file '%s' error #%u (%s)\r\n", __func__, tmp, res, fsErrName(res));
 
 }
 //------------------------------------------------------------------------------------------
@@ -472,6 +488,15 @@ FIL fp;
 }
 //------------------------------------------------------------------------------------------
 #endif
+//------------------------------------------------------------------------------------------
+void showCfg()
+{
+	*strf = '\0';
+	for (int i = 0; i < MAX_LIST; i++) {
+		sprintf(strf+strlen(strf), "%u:%.1f:%s\r\n", list[i].band, list[i].freq, list[i].name);
+	}
+	Report(0, "%s", strf);
+}
 //------------------------------------------------------------------------------------------
 
 /* USER CODE END 0 */
@@ -539,7 +564,7 @@ int main(void)
     list_sector = W25qxx_getPageSize() << 1;
     //
     listSize = sizeof(rec_t) * MAX_LIST;
-    memset((uint8_t *)&list[0].freq, 0, listSize);
+    memset((uint8_t *)&list[0].band, 0, listSize);
     //
 	#ifdef SET_FAT_FS
     	int8_t ix = 0;
@@ -550,43 +575,51 @@ int main(void)
       		char txt[MAX_UART_BUF] = {0};
       		cfg_present = rdFile(cfg, txt);
       		if (!cfg_present) {
-      			//
       			for (int i = 0; i < MAX_LIST; i++) {
-      				sprintf(txt+strlen(txt), "%.1f:%s\r\n", def_list[i].freq, def_list[i].name);
+      				sprintf(txt+strlen(txt), "%u:%.1f:%s\r\n", def_list[i].band, def_list[i].freq, def_list[i].name);
       			}
       			wrFile(cfg, txt, true);
-      			//
       			cfg_present = rdFile(cfg, txt);
       		}
       		if (cfg_present) {
-      			char *uks = txt, *uke = NULL, *uend = txt + strlen(txt);
-      			char tmp[64] = {0};
+      			char *uks = txt, *us = txt, *uke = NULL, *uend = txt + strlen(txt);
+      			char tmp[80] = {0};
       			while (uks < uend) {
       				uke = strstr(uks, "\r\n");
       				if (uke) {
+      					us = uke + 2;
       					memset(tmp, 0, sizeof(tmp));
       					memcpy(tmp, uks, uke - uks);
-      					uks = uke + 2;
       					uke = strchr(tmp, ':');
       					if (uke) {
-      						strncpy(&list[ix].name[0], uke + 1, MAX_SIZE_NAME - 1);
-      						*uke = '\0';
+      						uks = uke + 1;
+      						uke = strchr(uks, ':');
+      						if (uke) {
+      							strncpy(&list[ix].name[0], uke + 1, MAX_SIZE_NAME - 1);
+      							*uke = '\0';
+      						}
+      						uke = strchr(tmp, ':');
+      						if (uke) {
+      							list[ix].freq = (float)atof(uke + 1);
+      							*uke = '\0';
+      						}
       					}
-      					list[ix].freq = (float)atof(tmp);
-      					if (++ix == MAX_LIST) break;
+      					uks = us;
+      					list[ix].band = (uint8_t)atol(tmp);
       				} else {
       					break;
       				}
+      				if (++ix == MAX_LIST) break;
       			}
       			Report(1, "Readed %d records from '%s' file\r\n", ix, cfg);
       		}
       	}
       	if (!ix) {
-      		memcpy((uint8_t *)&list[0].freq, (uint8_t *)&def_list[0].freq, listSize);
+      		memcpy((uint8_t *)&list[0].band, (uint8_t *)&def_list[0].band, listSize);
       		devError |= devFS;
       	}
 	#else
-      	memcpy((uint8_t *)&list[0].freq, (uint8_t *)&def_list[0].freq, listSize);
+      	memcpy((uint8_t *)&list[0].band, (uint8_t *)&def_list[0].band, listSize);
 	#endif
 #endif
 
@@ -708,8 +741,13 @@ int main(void)
     					sprintf(stb, "FM Band:%s", allBands[Band]);//(uint16_t)lBand, (uint16_t)rBand);
     					showLine(stb, lin3, &lit, true);
     					Report(1, "[que:%u] set new band=%u '%s'\r\n", cntEvt, Band, allBands[Band]);
-    					if ((Freq < lBand) || (Freq > rBand)) {
-    						newFreq = lBand;
+    					if (next_evt == evt) {
+    						if ((Freq < lBand) || (Freq > rBand)) {
+    							newFreq = lBand;
+    							putEvt(evt_Freq);
+    						}
+    					} else {
+    						next_evt = evt;
     						putEvt(evt_Freq);
     					}
     				}
@@ -718,13 +756,24 @@ int main(void)
     			case evt_Dir:
     				if (mnt) dirList(dirName);
     			break;
-    			case evt_Cat:
+    			case evt_Cfg:
     				if (mnt) rdFile(cfg, NULL);
     			break;
 #endif
+    			case evt_Cat:
+    				showCfg();
+    			break;
     			case evt_List:
-    				newFreq = getNextList(Freq);
-    				putEvt(evt_Freq);
+    				next_evt = evt_Freq;
+    				newFreq = getNextList(Freq, seek_up, &newBand);
+					if (newBand == Band) {
+						//next_evt = evt_Freq;
+						Report(1, "Band = newBand = %u -> goto set newFreq to %.1f (up = %u)\r\n", newBand, newFreq, seek_up);
+    					putEvt(evt_Freq);
+					} else {
+						Report(1, "Band = %u -> goto set newBand to %u (newFreq to %.1f up = %u)\r\n", Band, newBand, newFreq, seek_up);
+    					putEvt(evt_Band);
+					}
     			break;
     			case evt_Bass:
     				if (newBassBoost != BassBoost) {
@@ -1554,7 +1603,7 @@ int8_t ik = -1;
 			 else return noneStation;
 }
 //-------------------------------------------------------------------------------------------
-float getNextList(float fr)
+float getNextList(float fr, uint8_t up, uint8_t *band)
 {
 float ret = fr;
 int8_t ik = -1;
@@ -1566,17 +1615,32 @@ int8_t ik = -1;
 		}
 	}
 	if (ik != -1) {
-		if (++ik == MAX_LIST) ik = 0;
+		if (up) {
+			if (++ik == MAX_LIST) ik = 0;
+		} else {
+			if (ik != 0) ik--; else ik = MAX_LIST - 1;
+		}
 	} else {
-		for (int8_t i = 0; i < MAX_LIST; i++) {
-			if (list[i].freq > fr) {
-				ik = i;
-				break;
+		if (up) {// seek_up
+			for (int8_t i = ik; i < MAX_LIST; i++) {
+				if (list[i].freq > fr) {
+					ik = i;
+					break;
+				}
+			}
+		} else {// seek_down
+			for (int8_t i = ik; i <= 0; i--) {
+				if (list[i].freq < fr) {
+					ik = i;
+					break;
+				}
 			}
 		}
 		if (ik == -1) ik = 0;
 	}
 	ret = list[ik].freq;
+	*band = list[ik].band;
+	Report(1, "[%s] up=%u ik=%d, fr=%.1f ret=%.1f band=%u\r\n", __func__, up, ik, fr, ret, *band);
 
 	return ret;
 }
@@ -1859,6 +1923,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 								}
 							break;
 							case cmdScan://"scan"
+							case cmdList://"list"
 								seek_up = 1;
 								ev = i;
 								char *uki = strchr(uk, ':');
@@ -1869,11 +1934,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 							case cmdClr://"clr"
 							case cmdHelp://"help"
 							case cmdVer://"ver"
-							case cmdList://"list"
 							case cmdMute://"mute"
-#ifdef SET_FAT_FS
 							case cmdCat://"cat"
+#ifdef SET_FAT_FS
 							case cmdDir://"dir"
+							case cmdCfg://"cfg"
 #endif
 								ev = i;
 							break;

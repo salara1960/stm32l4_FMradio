@@ -83,6 +83,7 @@ enum {
 	cmdList,
 	cmdBand,
 	cmdDir,
+	cmdCfg,
 	cmdCat
 };
 
@@ -107,6 +108,7 @@ enum {
 	evt_List,
 	evt_Band,
 	evt_Dir,
+	evt_Cfg,
 	evt_Cat
 };
 
@@ -182,8 +184,8 @@ enum {
 
 
 #define MAX_UART_BUF    1024
-#define MAX_CMDS          20
-#define MAX_LIST          24
+#define MAX_CMDS          21
+#define MAX_LIST          25
 #define MAX_BAND           4
 #define MAX_STEP           4
 
@@ -192,9 +194,10 @@ enum {
 	#define MAX_FIFO_SIZE 64
 #endif
 
-#define MAX_SIZE_NAME     28
+#define MAX_SIZE_NAME     31
 #pragma pack(push,1)
 typedef struct {
+	uint8_t band;
 	float freq;
 	char name[MAX_SIZE_NAME];
 } rec_t;
