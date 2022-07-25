@@ -26,9 +26,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#ifdef SET_FAT_FS
-	#include "fatfs.h"
-#endif
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -82,13 +79,17 @@ DMA_HandleTypeDef hdma_usart2_tx;
 //const char *ver = "0.9.4 20.07.22";
 //const char *ver = "1.0 21.07.22";//add two button KEY0 & KEY1 (scan_up & scan_down)
 //const char *ver = "1.1 21.07.22";//add new command 'list'
-const char *ver = "1.2 22.07.22";//add select band feature
+//const char *ver = "1.2 22.07.22";//add select band feature + fatfs
+//const char *ver = "1.3 23.07.22";
+//const char *ver = "1.4 24.07.22";// new feature for 'list' command
+const char *ver = "1.4.2 25.07.22";// without FatFs release
 
 
 
 char stx[MAX_UART_BUF] = {0};
 char tmp[128] = {0};
 char cmdBuf[MAX_UART_BUF] = {0};
+char strf[MAX_UART_BUF] = {0};
 uint16_t devError = HAL_OK;
 
 volatile static uint32_t secCounter = 0;//period 1s
@@ -107,7 +108,8 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1658501279;
+static uint32_t epoch = 1658775452;//1658774189;//1658673059;//1658665853;
+//1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
 //1657971799;1657915595;1657635512;1657313424;//1657283440;//1657234028;//1657200272;//1657194633;//1657144926;
 bool setDate = false;
@@ -129,9 +131,11 @@ const char *s_cmds[MAX_CMDS] = {
 	"scan",
 	"freq:",
 	"vol:",
+	"mute",
 	"bass:",
 	"list",
-	"band:"
+	"band:",
+	"cfg"
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -148,9 +152,11 @@ const char *str_cmds[MAX_CMDS] = {
 	"Scan",
 	"setFreq",
 	"Volume",
+	"muteRadio",
 	"BassBoost",
 	"nextStation",
-	"Band"
+	"Band",
+	"cfgStations"
 };
 
 #ifdef SET_FIFO_MODE
@@ -162,6 +168,7 @@ const char *str_cmds[MAX_CMDS] = {
 	uint8_t max_evt = 0;
 	bool lock_fifo = false;
 	int evt = evt_None;
+	int next_evt = evt_None;
 	volatile uint8_t cntEvt = 0;
 #endif
 
@@ -171,30 +178,15 @@ uint32_t spi_cnt = 0;
 uint8_t spiRdy = 1;
 //
 #ifdef SET_W25FLASH
-	/*const char *_read  = "read";
-	const char *_write  = "write";
-	const char *_erase  = "erase";
-	const char *_next  = "next";*/
 	int adr_sector = 0, offset_sector = 0, list_sector = 0, len_write = 0;
 	int cmd_sector = sNone, last_cmd_sector = sNone;
 	uint8_t byte_write = 0xff;
 	bool flag_sector = false;
 	unsigned char fs_work[_MAX_SS] = {0};
-	char strf[1024] = {0};
 	bool chipPresent = false;
 	bool validChipID = false;
-	//
-	#ifdef SET_FAT_FS
-		FATFS FatFs;
-		const char *cfg = "radio.cfg";
-		bool cfg_present = false;
-		bool mnt = false;
-		const char *dirName = "/";
-		//bool cat_flag = false;
-		//const char *_cat  = "cat";
-		//bool dir_open = false;
-	#endif
-	//
+	uint32_t btime = 0, etime = 0;
+	uint32_t cfgSector = 0;
 #endif
 
 #ifdef SET_DISPLAY
@@ -202,7 +194,7 @@ uint8_t spiRdy = 1;
 	FontDef_t *lfnt = NULL;
 #endif
 
-#if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
+#ifdef SET_RDA_CHIP
 	float Freq = 76;//94.0;//96.3;//95.1;
 	float newFreq = 95.1;
 	float lBand = 0.0;
@@ -220,34 +212,39 @@ uint8_t spiRdy = 1;
 	uint8_t BassBoost = 0;
 	uint8_t newBassBoost = 0;
 	bool stereo = false;
+	uint8_t noMute = 1;
 	//
 	const char *noneStation = "???";
-	static const rec_t list[MAX_LIST] = {
-		{72.1, "Шансон"},// Шансон
-		{93.6, "Радио_7"},// Радио 7
-		{94.0, "Комеди_Радио"},// Комеди Радио
-		{95.1, "Вести_ФМ"},// Вести ФМ
-		{95.5, "Ретро_ФМ"},// Ретро ФМ
-		{96.3, "Русское_Радио"},// Русское Радио
-		{97.0, "Радио_Вера"},// Радио Книга
-		{97.9, "Серебр.Дождь"},// Серебрянный Дождь
-		{98.5, "Радио_Энергия"},// Радио Энергия
-		{99.5, "Радио_Звезда"},// Радио Звезда
-		{100.1, "Авто_Радио"},// АвтоРадио
-		{100.6, "Русский_Край"},// Русский Край
-		{100.9, "Монте-Карло"},// Монте-Карло
-		{101.3, "Наше_Радио"},// Наше Радио
-		{101.8, "Бизнес_ФМ"},// Бизнес ФМ
-		{102.5, "Маяк"},// Маяк
-		{102.9, "Любимое_Радио"},// Любимое Радио
-		{103.4, "Студия_21"},// Студия 21
-		{103.9, "Радио_России"},// Радио России
-		{104.5, "Европа_Плюс"},// Европа Плюс
-		{105.2, "Балтик_Плюс"},// Балтик Плюс
-		{105.9, "Дорожное_Радио"},// Дорожное Радио
-		{106.4, "Радио_Максим"},// Радио Максим
-		{107.2, "Радио_КП"}// Комсомольская Правда
+	static const rec_t def_list[MAX_LIST] = {
+		//Band:3 65-76
+		{3, 68.5, "Маяк"},// Маяк
+		{3, 72.1, "Шансон"},// Шансон
+		//Band:2,1 76-108, 87-108
+		{2, 93.6, "Радио_7"},// Радио 7
+		{2, 94.0, "Комеди_Радио"},// Комеди Радио
+		{2, 95.1, "Вести_ФМ"},// Вести ФМ
+		{2, 95.5, "Ретро_ФМ"},// Ретро ФМ
+		{2, 96.3, "Русское_Радио"},// Русское Радио
+		{2, 97.0, "Радио_Вера"},// Радио Книга
+		{2, 97.9, "Серебр.Дождь"},// Серебрянный Дождь
+		{2, 98.5, "Радио_Энергия"},// Радио Энергия
+		{2, 99.5, "Радио_Звезда"},// Радио Звезда
+		{2, 100.1, "Авто_Радио"},// АвтоРадио
+		{2, 100.6, "Русский_Край"},// Русский Край
+		{2, 100.9, "Монте-Карло"},// Монте-Карло
+		{2, 101.3, "Наше_Радио"},// Наше Радио
+		{2, 101.8, "Бизнес_ФМ"},// Бизнес ФМ
+		{2, 102.5, "Маяк"},// Маяк
+		{2, 102.9, "Любимое_Радио"},// Любимое Радио
+		{2, 103.4, "Студия_21"},// Студия 21
+		{2, 103.9, "Радио_России"},// Радио России
+		{2, 104.5, "Европа_Плюс"},// Европа Плюс
+		{2, 105.2, "Балтик_Плюс"},// Балтик Плюс
+		{2, 105.9, "Дорожное_Радио"},// Дорожное Радио
+		{2, 106.4, "Радио_Максим"},// Радио Максим
+		{2, 107.2, "Радио_КП"}// Комсомольская Правда
 	};
+	rec_t list[MAX_LIST];
 	uint16_t listSize = 0;
 	//
 	const char *allBands[MAX_BAND] = {
@@ -256,12 +253,6 @@ uint8_t spiRdy = 1;
 		"76-108 MHz",// (world wide)",
 		"65-76 MHz"// (East Europe) or 50-65MHz"
 	};
-	/*const char *allSteps[MAX_STEP] = {
-		"100 kHz",
-		"200 kHz",
-		"50 kHz",
-		"25 KHz"
-	};*/
 
 #endif
 
@@ -294,7 +285,7 @@ int sec2str(char *st);
 void Report(const uint8_t addTime, const char *fmt, ...);
 void showLine(char *msg, uint16_t lin, int *lil, bool update);
 const char *nameStation(float fr);
-float getNextList(float fr);
+float getNextList(float fr, uint8_t up, uint8_t *band);
 
 
 /* USER CODE END PFP */
@@ -302,185 +293,15 @@ float getNextList(float fr);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 //------------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------
-#ifdef SET_FAT_FS
-//------------------------------------------------------------------------------------------
-static char *fsErrName(int fr)
+void showCfg()
 {
-	switch (fr) {
-		case FR_OK:				// (0) Succeeded
-			return "Succeeded";
-		case FR_DISK_ERR://			(1) A hard error occurred in the low level disk I/O layer
-			return "Error disk I/O";
-		case FR_INT_ERR://			(2) Assertion failed
-			return "Assertion failed";
-		case FR_NOT_READY://		(3) The physical drive cannot work
-			return "Drive not ready";
-		case FR_NO_FILE://			(4) Could not find the file
-			return "No file";
-		case FR_NO_PATH://			(5) Could not find the path
-			return "No path";
-		case FR_INVALID_NAME://		(6) The path name format is invalid
-			return "Path error";
-		case FR_DENIED://			(7) Access denied due to prohibited access or directory full
-		case FR_EXIST://			(8) Access denied due to prohibited access
-			return "Access denied";
-		case FR_INVALID_OBJECT://	(9) The file/directory object is invalid
-			return "Invalid file/dir";
-		case FR_WRITE_PROTECTED://	(10) The physical drive is write protected
-			return "Write protected";
-		case FR_INVALID_DRIVE://	(11) The logical drive number is invalid
-			return "Invalid drive number";
-		case FR_NOT_ENABLED://		(12) The volume has no work area
-			return "Volume no area";
-		case FR_NO_FILESYSTEM://	(13) There is no valid FAT volume
-			return "Volume has't filesystem";
-		case FR_MKFS_ABORTED://		(14) The f_mkfs() aborted due to any problem
-			return "f_mkfs() aborted";
-		case FR_TIMEOUT://			(15) Could not get a grant to access the volume within defined period
-			return "Timeout access";
-		case FR_LOCKED://			(16) The operation is rejected according to the file sharing policy
-			return "File locked";
-		case FR_NOT_ENOUGH_CORE://	(17) LFN working buffer could not be allocated
-			return "Allocated buf error";
-		case FR_TOO_MANY_OPEN_FILES://	(18) Number of open files > _FS_LOCK
-			return "Open file limit";
-		case FR_INVALID_PARAMETER://	(19) Given parameter is invalid
-			return "Invalid parameter";
+	*strf = '\0';
+	for (int i = 0; i < MAX_LIST; i++) {
+		sprintf(strf+strlen(strf), "%u:%.1f:%s\r\n", list[i].band, list[i].freq, list[i].name);
 	}
-	return "Unknown error";
+	Report(0, "%s", strf);
 }
 //------------------------------------------------------------------------------------------
-static char *attrName(uint8_t attr)
-{
-	switch (attr) {
-		case AM_RDO://	0x01	/* Read only */
-			return "Read only";
-		case AM_HID://	0x02	/* Hidden */
-			return "Hidden";
-		case AM_SYS://	0x04	/* System */
-			return "System";
-		case AM_DIR://	0x10	/* Directory */
-			return "Directory";
-		case AM_ARC://	0x20	/* Archive */
-			return "Archive";
-		default : return "Unknown";
-	}
-}
-//------------------------------------------------------------------------------------------
-bool drvMount(const char *path)
-{
-bool ret = false;
-
-	if (!validChipID) return ret;
-
-	FRESULT res = f_mount(&FatFs, path, 1);
-	if (res == FR_NO_FILESYSTEM) {
-		Report(1, "Mount drive '%s' error #%u (%s)\r\n", path, res, fsErrName(res));
-		res = f_mkfs(path, FM_FAT, W25qxx_getBlockSize(), fs_work, sizeof(fs_work));
-		if (!res) {
-			Report(1, "Make FAT fs on drive '%s' OK\r\n", path);
-			res = f_mount(&FatFs, path, 1);
-    	} else {
-    		Report(1, "Make FAT fs error #%u (%s)\r\n", res, fsErrName(res));
-    	}
-	}
-	if (!res) {
-		ret = true;
-		Report(1, "Mount drive '%s' OK\r\n", path);
-	} else {
-		Report(1, "Mount drive '%s' error #%u (%s)\r\n", path, res, fsErrName(res));
-	}
-
-	return ret;
-}
-//------------------------------------------------------------------------------------------
-void dirList(const char *name_dir)
-{
-DIR dir;
-
-	FRESULT res = f_opendir(&dir, name_dir);
-	if (!res) {
-		FILINFO fno;
-		int cnt = -1;
-		Report(1, "Read folder '%s':\r\n", name_dir);
-		for (;;) {
-			res = f_readdir(&dir, &fno);
-			cnt++;
-			if (res || fno.fname[0] == 0) {
-				if (!cnt) Report(0, "\tFolder '%s' is empty\r\n", name_dir);
-				break;
-			} else if (fno.fattrib & AM_DIR) {// It is a directory
-				Report(0, "\tIt is folder -> '%s'\r\n", fno.fname);
-			} else {// It is a file.
-				Report(0, "\tname:%s, size:%u bytes, attr:%s\r\n",
-									fno.fname,
-									fno.fsize,
-									attrName(fno.fattrib));
-			}
-		}
-		f_closedir(&dir);
-	}
-}
-//------------------------------------------------------------------------------------------
-void wrFile(const char *name, const char *text, bool update)
-{
-char tmp[128];
-FIL fp;
-FRESULT res = FR_NO_FILE;
-
-	sprintf(tmp, "/%s", cfg);
-	if (!update) {
-		res = f_open(&fp, tmp, FA_READ);
-		if (res == FR_OK) {
-			res = f_close(&fp);
-			Report(1, "File '%s' allready present and update has't been ordered\r\n", tmp);
-			return;
-		}
-	}
-
-	res = f_open(&fp, tmp, FA_CREATE_ALWAYS | FA_WRITE);
-	if (!res) {
-		//Report(1, "Create new file '%s' OK\r\n", tmp);
-		//int wrt = 0, dl = strlen(text);
-		//wrt =
-		f_puts(text, &fp);
-		/*if (wrt != dl) {
-			devError |= devFS;
-			Report(1, "Error while write file '%s'\r\n", tmp);
-		} else*/
-		Report(1, "File file '%s' write OK\r\n", tmp);
-
-		res = f_close(&fp);
-	} else Report(1, "Create new file '%s' error #%u (%s)\r\n", tmp, res, fsErrName(res));
-
-}
-//------------------------------------------------------------------------------------------
-bool rdFile(const char *name)
-{
-bool ret = false;
-char tmp[128];
-FIL fp;
-
-	if (!f_open(&fp, name, FA_READ)) {
-		Report(1, "File '%s' open for reading OK\r\n", name);
-
-		while (f_gets(tmp, sizeof(tmp) - 1, &fp) != NULL) Report(0, "%s", tmp);
-
-		f_close(&fp);
-
-		ret = true;
-	} else {
-		Report(1, "Error while open for reading file '%s'\r\n", name);
-	}
-
-	return ret;
-}
-//------------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------
-#endif
 
 /* USER CODE END 0 */
 
@@ -519,7 +340,6 @@ int main(void)
   MX_SPI2_Init();
   MX_SPI1_Init();
   MX_I2C1_Init();
-  MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
 
 
@@ -536,7 +356,7 @@ int main(void)
 
   set_Date(epoch);
 
-  HAL_Delay(250);
+  HAL_Delay(150);
 
   Report(1, "[que:%u] Start application ver.%s\r\n", cntEvt, ver);
 
@@ -546,57 +366,27 @@ int main(void)
     if ( chipPresent && ((cid >= W25Q10) && (cid <= W25Q128)) ) validChipID = true;
     list_sector = W25qxx_getPageSize() << 1;
     //
-	#ifdef SET_FAT_FS
-      	mnt = drvMount(USERPath);
-      	if (mnt) {
-      		dirList(dirName);
-      		//
-      		cfg_present = rdFile(cfg);
-      		if (!cfg_present) {
-      			//
-      			char txt[MAX_UART_BUF] = {0};
-      			for (int i = 0; i < MAX_LIST; i++) {
-      				sprintf(txt+strlen(txt), "%.1f:%s\r\n", list[i].freq, list[i].name);
-      			}
-      			wrFile(cfg, txt, true);
-      			//
-      			rdFile(cfg);
-      		}
+    listSize = sizeof(rec_t) * MAX_LIST;
+    memset((uint8_t *)&list[0].band, 0, listSize);
+    //
+    cfgSector = W25qxx_getSectorCount() - 1;
+    if (W25qxx_IsEmptySector(cfgSector, 0, listSize)) {//sector is empty -> need write data to sector
+    	if (!(devError & devSPI)) {
+    		W25qxx_WriteSector((uint8_t *)&def_list[0].band, cfgSector, 0, listSize);
+    		Report(1, "Writen cfg_stations_data (%lu bytes) to cfgSector #%lu\r\n", listSize, cfgSector);
       	}
-      	/*if (dir_open) {
-      		f_closedir(&dir);
-      		dir_open = false;
-      		Report(1, "Close dir '%s'\r\n", ps);
-      	}*/
-      	/*if (mnt) {
-      		f_mount(NULL, USERPath, 1);
-      		mnt = false;
-      		Report(1, "Umount drive '%.*s'\r\n", sizeof(USERPath), USERPath);
-      	}*/
-	#endif
+    } else {//in sector	present any data
+    	if (!(devError & devSPI)) {
+    		W25qxx_ReadSector((uint8_t *)&list[0].band, cfgSector, 0, listSize);
+    		Report(1, "Readed cfg_stations_data (%lu bytes) from cfgSector #%lu\r\n", listSize, cfgSector);
+      	} else {
+      		memcpy((uint8_t *)&list[0].band, (uint8_t *)&def_list[0].band, listSize);
+      	}
+    }
 #endif
 
 
 #ifdef SET_RDA_CHIP
-
-    RDA5807m_Reset();
-
-    if (!(devError & devRDA)) rdaID = RDA5807m_ID();
-
-    if (!(devError & devRDA)) RDA5807m_Init();
-
-    if (!(devError & devRDA)) RDA5807m_SetBand(BAND_76_108);
-    if (!(devError & devRDA)) RDA5807m_SetStep(STEP_100);
-    if (!(devError & devRDA)) RDA5807m_SetFreq(Freq);
-    if (!(devError & devRDA)) RDA5807m_Seek();
-
-    if (!(devError & devRDA)) Chan = RDA5807m_GetChan();
-    if (!(devError & devRDA)) RSSI = RDA5807m_GetRSSI();
-    if (!(devError & devRDA)) Freq = RDA5807m_GetFreq();
-
-#endif
-
-#ifdef SET_NEW_RDA
 
     rdaID = rda5807_init(&Freq);
     RSSI = rda5807_rssi();
@@ -634,7 +424,7 @@ int main(void)
     uint16_t x = ((SCREEN_WIDTH - (Font_6x8.FontWidth * dl)) >> 1) & 0x7f;
     ST7565_Print(x, SCREEN_HEIGHT - Font_6x8.FontHeight, tmp, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
 
-	#if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
+	#ifdef SET_RDA_CHIP
     	int il = sprintf(st, "RDA5807 chipID:0x%x", rdaID);
     	uint16_t xf = ((SCREEN_WIDTH - (Font_6x8.FontWidth * il)) >> 1) & 0x7f;
     	if (!xf) xf = 1;
@@ -646,7 +436,7 @@ int main(void)
     	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
     	ST7565_Print(xf, lin3, stb, &Font_6x8, 1, PIX_ON);
 
-    	int im = sprintf(st, "Vol:%u Bass:%u", Volume, BassBoost);
+    	int im = sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
     	int lim = im;
     	xf = ((SCREEN_WIDTH - (Font_6x8.FontWidth * im)) >> 1) & 0x7f;
     	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
@@ -713,22 +503,41 @@ int main(void)
     					sprintf(stb, "FM Band:%s", allBands[Band]);//(uint16_t)lBand, (uint16_t)rBand);
     					showLine(stb, lin3, &lit, true);
     					Report(1, "[que:%u] set new band=%u '%s'\r\n", cntEvt, Band, allBands[Band]);
-    					if ((Freq < lBand) || (Freq > rBand)) {
-    						newFreq = lBand;
+    					if (next_evt == evt) {
+    						if ((Freq < lBand) || (Freq > rBand)) {
+    							newFreq = lBand;
+    							putEvt(evt_Freq);
+    						}
+    					} else {
+    						next_evt = evt;
     						putEvt(evt_Freq);
     					}
     				}
     			break;
+    			case evt_Cfg:
+    				showCfg();
+    			break;
     			case evt_List:
-    				newFreq = getNextList(Freq);
-    				putEvt(evt_Freq);
+    				next_evt = evt_Freq;
+    				newFreq = getNextList(Freq, seek_up, &newBand);
+					if (newBand == Band) {
+						//next_evt = evt_Freq;
+						Report(1, "Band = newBand = %u -> goto set newFreq to %.1f (up = %u)\r\n", newBand, newFreq, seek_up);
+    					putEvt(evt_Freq);
+					} else {
+						Report(1, "Band = %u -> goto set newBand to %u (newFreq to %.1f up = %u)\r\n", Band, newBand, newFreq, seek_up);
+    					putEvt(evt_Band);
+					}
     			break;
     			case evt_Bass:
     				if (newBassBoost != BassBoost) {
     					BassBoost = newBassBoost;
     					rda5807_SetBassBoost(BassBoost);
     					//
-    					sprintf(st, "Vol:%u Bass:%u", Volume, BassBoost);
+    					if (noMute)
+    						sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
+    					else
+    						sprintf(st, "Bass:%u Vol:%u M", BassBoost, Volume);
     					showLine(st, lin4, &lim, true);
     					Report(1, "[que:%u] set new BassBoost to %u\r\n", cntEvt, BassBoost);
     				}
@@ -738,10 +547,24 @@ int main(void)
     					Volume = newVolume;
     					rda5807_SetVolume(Volume);
     					//
-    					sprintf(st, "Vol:%u BassEn:%u", Volume, BassBoost);
+    					if (noMute)
+    						sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
+    					else
+    						sprintf(st, "Bass:%u Vol:%u M", BassBoost, Volume);
     					showLine(st, lin4, &lim, true);
     					Report(1, "[que:%u] set new Volume to %u\r\n", cntEvt, Volume);
     				}
+    			break;
+    			case evt_Mute:
+    				noMute = (~noMute) & 1;
+    				rda5807_Set_Mute(noMute);
+    				//
+    				if (noMute)
+    					sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
+    				else
+    					sprintf(st, "Bass:%u Vol:%u M", BassBoost, Volume);
+    				showLine(st, lin4, &lim, true);
+    				Report(1, "[que:%u] set Mute to %u\r\n", cntEvt, (~noMute) & 1);
     			break;
     			case evt_Freq:
     				if ((newFreq >= lBand) && (newFreq <= rBand)) {
@@ -782,7 +605,7 @@ int main(void)
 #endif
     				//
     				if (scan) {
-    					if (rda5807_Get_SeekTuneReadyFlag()) {//RadioNewState(Idle, 10);
+    					if (rda5807_Get_SeekTuneReadyFlag()) {
     						Freq = (float)rda5807_GetFreq_In100Khz();
     						Freq /= 10;
     						scan = 0;
@@ -886,9 +709,15 @@ int main(void)
     			}
     			break;
     			case evt_sErase:
-    				W25qxx_EraseSector(adr_sector);
-    				Report(0, "Erase sector:%d done\r\n", adr_sector);
-    				break;
+    				if (adr_sector == -1) {
+    					Report(1, "Erase flash");
+    					flag_sector = true;
+    					btime = HAL_GetTick();
+    				} else {
+    					W25qxx_EraseSector(adr_sector);
+    					Report(1, "Erase sector:%d done\r\n", adr_sector);
+    				}
+    			break;
 #endif
     		}
     		if ((evt >= evt_sRead) && (evt <= evt_sWrite)) {
@@ -897,6 +726,22 @@ int main(void)
     		}
     	}
 #endif
+
+#ifdef SET_W25FLASH
+    	if (flag_sector) {
+    		adr_sector++;
+    		if (adr_sector >= W25qxx_getSectorCount()) {
+    			flag_sector = false;
+    			etime = HAL_GetTick();
+    			Report(0, " done (%lu sec)\r\n", (etime - btime) / 1000);
+    		} else {
+    			//putEvt(evt_sErase);
+    			W25qxx_EraseSector(adr_sector);
+    			if (!(adr_sector % 8)) Report(0, ".");
+    		}
+    	}
+#endif
+
 
     	if (devError) {
     		errLedOn(true);
@@ -911,23 +756,13 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    }
+    }//while (!restart)
 
     HAL_TIM_Base_Stop_IT(tikPort);
 
 #ifdef SET_DISPLAY
     ST7565_Reset();
     ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
-#endif
-#if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
-
-#endif
-#ifdef SET_FAT_FS
-    if (mnt) {
-    	f_mount(NULL, USERPath, 1);
-    	//mnt = false;
-    	Report(1, "Umount drive '%.*s'\r\n", sizeof(USERPath), USERPath);
-    }
 #endif
 
     Report(1, "[que:%u] Stop application...\r\n", cntEvt);
@@ -1514,7 +1349,7 @@ int8_t ik = -1;
 			 else return noneStation;
 }
 //-------------------------------------------------------------------------------------------
-float getNextList(float fr)
+float getNextList(float fr, uint8_t up, uint8_t *band)
 {
 float ret = fr;
 int8_t ik = -1;
@@ -1526,17 +1361,32 @@ int8_t ik = -1;
 		}
 	}
 	if (ik != -1) {
-		if (++ik == MAX_LIST) ik = 0;
+		if (up) {
+			if (++ik == MAX_LIST) ik = 0;
+		} else {
+			if (ik != 0) ik--; else ik = MAX_LIST - 1;
+		}
 	} else {
-		for (int8_t i = 0; i < MAX_LIST; i++) {
-			if (list[i].freq > fr) {
-				ik = i;
-				break;
+		if (up) {// seek_up
+			for (int8_t i = ik; i < MAX_LIST; i++) {
+				if (list[i].freq > fr) {
+					ik = i;
+					break;
+				}
+			}
+		} else {// seek_down
+			for (int8_t i = ik; i <= 0; i--) {
+				if (list[i].freq < fr) {
+					ik = i;
+					break;
+				}
 			}
 		}
 		if (ik == -1) ik = 0;
 	}
 	ret = list[ik].freq;
+	*band = list[ik].band;
+	Report(1, "[%s] up=%u ik=%d, fr=%.1f ret=%.1f band=%u\r\n", __func__, up, ik, fr, ret, *band);
 
 	return ret;
 }
@@ -1819,17 +1669,19 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 								}
 							break;
 							case cmdScan://"scan"
+							case cmdList://"list"
 								seek_up = 1;
 								ev = i;
 								char *uki = strchr(uk, ':');
 								if (uki) {
-									if (*(char *)(uki + 1) == '0') seek_up = 0;
+									if ((*(char *)(uki + 1) == '0') || strstr(uki + 1, "down")) seek_up = 0;
 								}
 							break;
 							case cmdClr://"clr"
 							case cmdHelp://"help"
 							case cmdVer://"ver"
-							case cmdList:
+							case cmdMute://"mute"
+							case cmdCfg://"cfg"
 								ev = i;
 							break;
 							case cmdRestart://"restart" -> restart = 1;
@@ -1854,10 +1706,14 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 											  else cmd_sector = cmdsErase;
 								if (*uk == ':') {
 									int sek = atoi(++uk);
-									if ((sek >= 0) && (sek < W25qxx_getSectorCount())) {
+									if ( ((sek >= 0) && (sek < W25qxx_getSectorCount())) || (sek == -1) ) {
 										adr_sector = sek;
 										offset_sector = 0;
-										ev = i;//flag_sector = true;
+										if (sek == -1) {
+											if (cmd_sector == cmdsErase) ev = i;
+										} else {
+											ev = i;
+										}
 									}
 								}
 							break;
@@ -1967,7 +1823,7 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 //--------------------------------------------------------------------------------------------
 void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
-#if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
+#ifdef SET_RDA_CHIP
 	if (hi2c->Instance == I2C1) {
 		i2cRdy = 1;
 	}
@@ -1976,7 +1832,7 @@ void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
 //--------------------------------------------------------------------------------------------
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
-#if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
+#ifdef SET_RDA_CHIP
 	if (hi2c->Instance == I2C1) {
 		devError |= devRDA;
 	}

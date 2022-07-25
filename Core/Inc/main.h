@@ -78,10 +78,11 @@ enum {
 	cmdScan,
 	cmdFreq,
 	cmdVol,
+	cmdMute,
 	cmdBass,
 	cmdList,
-	cmdBand
-	//cmdStep
+	cmdBand,
+	cmdCfg
 };
 
 enum {
@@ -100,9 +101,11 @@ enum {
 	evt_Scan,
 	evt_Freq,
 	evt_Vol,
+	evt_Mute,
 	evt_Bass,
 	evt_List,
-	evt_Band
+	evt_Band,
+	evt_Cfg
 };
 
 
@@ -114,9 +117,6 @@ enum {
 	#include "ST7565.h"
 #endif
 #ifdef SET_RDA_CHIP
-	#include "rda5807m.h"
-#endif
-#ifdef SET_NEW_RDA
 	#include "rda5807.h"
 #endif
 
@@ -180,8 +180,8 @@ enum {
 
 
 #define MAX_UART_BUF    1024
-#define MAX_CMDS          17
-#define MAX_LIST          24
+#define MAX_CMDS          19
+#define MAX_LIST          25
 #define MAX_BAND           4
 #define MAX_STEP           4
 
@@ -190,11 +190,14 @@ enum {
 	#define MAX_FIFO_SIZE 64
 #endif
 
-
+#define MAX_SIZE_NAME     31
+#pragma pack(push,1)
 typedef struct {
+	uint8_t band;
 	float freq;
-	char name[28];
+	char name[MAX_SIZE_NAME];
 } rec_t;
+#pragma pack(pop)
 
 /* USER CODE END EM */
 
@@ -249,13 +252,12 @@ extern char rxBuf[MAX_UART_BUF];
 extern uint32_t spi_cnt;
 extern uint8_t spiRdy;
 
-#if defined(SET_RDA_CHIP) || defined(SET_NEW_RDA)
+#ifdef SET_RDA_CHIP
 	extern volatile uint8_t i2cRdy;
 	extern float lBand, rBand;
 	extern uint8_t Volume;
 	extern uint8_t BassBoost;
 	extern uint8_t Band;// = 2;
-	//extern uint8_t Step;// = 0;
 #endif
 
 

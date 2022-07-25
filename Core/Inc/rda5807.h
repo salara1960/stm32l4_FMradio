@@ -4,7 +4,7 @@
 //#include "stm32f0xx_hal.h"
 #include "hdr.h"
 
-#ifdef SET_NEW_RDA
+#ifdef SET_RDA_CHIP
 
 //#define SET_RDA_DEBUG
 
@@ -230,6 +230,7 @@ uint8_t rda5807_Get_SeekTuneReadyFlag();
 bool rda5807_Get_StereoMonoFlag();
 uint16_t rda5807_Get_Channel();
 uint8_t rda5807_Set_Band(uint8_t band);
+void rda5807_Set_Mute(uint8_t mute);
 
 #endif
 
