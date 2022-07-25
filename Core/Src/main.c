@@ -84,7 +84,8 @@ DMA_HandleTypeDef hdma_usart2_tx;
 //const char *ver = "1.1 21.07.22";//add new command 'list'
 //const char *ver = "1.2 22.07.22";//add select band feature + fatfs
 //const char *ver = "1.3 23.07.22";
-const char *ver = "1.4 24.07.22";// new feature for 'list' command
+//const char *ver = "1.4 24.07.22";// new feature for 'list' command
+const char *ver = "1.4.1 25.07.22";
 
 
 
@@ -110,7 +111,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1658673059;//1658665853;
+static uint32_t epoch = 1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
 //1657971799;1657915595;1657635512;1657313424;//1657283440;//1657234028;//1657200272;//1657194633;//1657144926;
@@ -137,9 +138,11 @@ const char *s_cmds[MAX_CMDS] = {
 	"bass:",
 	"list",
 	"band:",
+#ifdef SET_FAT_FS
 	"dir",
-	"cfg",
-	"cat"
+	"cat",
+#endif
+	"cfg"
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -160,9 +163,11 @@ const char *str_cmds[MAX_CMDS] = {
 	"BassBoost",
 	"nextStation",
 	"Band",
-	"Folders",
-	"fileCfg",
-	"catList"
+#ifdef SET_FAT_FS
+	"ls -la",
+	"catCfgFile",
+#endif
+	"cfgStations"
 };
 
 #ifdef SET_FIFO_MODE
@@ -756,11 +761,11 @@ int main(void)
     			case evt_Dir:
     				if (mnt) dirList(dirName);
     			break;
-    			case evt_Cfg:
+    			case evt_Cat:
     				if (mnt) rdFile(cfg, NULL);
     			break;
 #endif
-    			case evt_Cat:
+    			case evt_Cfg:
     				showCfg();
     			break;
     			case evt_List:
@@ -1935,10 +1940,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 							case cmdHelp://"help"
 							case cmdVer://"ver"
 							case cmdMute://"mute"
-							case cmdCat://"cat"
-#ifdef SET_FAT_FS
-							case cmdDir://"dir"
 							case cmdCfg://"cfg"
+#ifdef SET_FAT_FS
+							case cmdDir://"dir" | ls -la
+							case cmdCat://"cat" | cat cfgFile (radio.cfg)
 #endif
 								ev = i;
 							break;

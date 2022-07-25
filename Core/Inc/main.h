@@ -83,8 +83,8 @@ enum {
 	cmdList,
 	cmdBand,
 	cmdDir,
-	cmdCfg,
-	cmdCat
+	cmdCat,
+	cmdCfg
 };
 
 enum {
@@ -108,8 +108,8 @@ enum {
 	evt_List,
 	evt_Band,
 	evt_Dir,
-	evt_Cfg,
-	evt_Cat
+	evt_Cat,
+	evt_Cfg
 };
 
 
