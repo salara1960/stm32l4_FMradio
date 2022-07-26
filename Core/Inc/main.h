@@ -61,6 +61,11 @@ enum {
 	devLCD = 0x80,
 	devRDA = 0x100,
 	devFS = 0x200
+#ifdef SET_BLE
+	,
+	devBLE = 0x400,
+	devQUE = 0x800
+#endif
 };
 
 enum {
@@ -180,6 +185,9 @@ enum {
 
 
 #define MAX_UART_BUF    1024
+#ifdef SET_BLE
+	#define MAX_BLE_BUF  256
+#endif
 #define MAX_CMDS          19
 #define MAX_LIST          25
 #define MAX_BAND           4
@@ -198,6 +206,8 @@ typedef struct {
 	char name[MAX_SIZE_NAME];
 } rec_t;
 #pragma pack(pop)
+
+
 
 /* USER CODE END EM */
 
@@ -235,6 +245,8 @@ void Report(const uint8_t addTime, const char *fmt, ...);
 #define SPI1_RST_GPIO_Port GPIOD
 #define SPI1_DC_Pin GPIO_PIN_5
 #define SPI1_DC_GPIO_Port GPIOB
+#define BLE_STAT_Pin GPIO_PIN_9
+#define BLE_STAT_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
 extern I2C_HandleTypeDef hi2c1;
@@ -260,6 +272,28 @@ extern uint8_t spiRdy;
 	extern uint8_t Band;// = 2;
 #endif
 
+
+#ifdef SET_BLE
+
+#define MAX_QREC 32
+
+#pragma pack(push,1)
+typedef struct que_rec_t {
+	int8_t id;
+	char *adr;
+} que_rec_t;
+#pragma pack(pop)
+
+#pragma pack(push,1)
+typedef struct s_recq_t {
+	volatile uint8_t lock;
+	uint8_t put;
+	uint8_t get;
+	que_rec_t rec[MAX_QREC];
+} s_recq_t;
+#pragma pack(pop)
+
+#endif
 
 
 /* USER CODE END Private defines */

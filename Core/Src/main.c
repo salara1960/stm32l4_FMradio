@@ -57,7 +57,9 @@ DMA_HandleTypeDef hdma_spi2_tx;
 
 TIM_HandleTypeDef htim4;
 
+UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_uart4_tx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
@@ -82,7 +84,8 @@ DMA_HandleTypeDef hdma_usart2_tx;
 //const char *ver = "1.2 22.07.22";//add select band feature + fatfs
 //const char *ver = "1.3 23.07.22";
 //const char *ver = "1.4 24.07.22";// new feature for 'list' command
-const char *ver = "1.4.2 25.07.22";// without FatFs release
+//const char *ver = "1.4.2 25.07.22";// without FatFs release
+const char *ver = "1.5 26.07.22";// add bluetooth device 'JDY-25M'
 
 
 
@@ -108,7 +111,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1658775452;//1658774189;//1658673059;//1658665853;
+static uint32_t epoch = 1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
 //1657971799;1657915595;1657635512;1657313424;//1657283440;//1657234028;//1657200272;//1657194633;//1657144926;
@@ -256,6 +259,28 @@ uint8_t spiRdy = 1;
 
 #endif
 
+
+#ifdef SET_BLE
+	UART_HandleTypeDef *blePort = &huart4;
+	uint8_t bleRdy = 1;
+	uint8_t rxbByte = 0;
+	uint16_t rxbInd = 0;
+	char rxbBuf[MAX_BLE_BUF] = {0};
+	char txbBuf[MAX_BLE_BUF] = {0};
+	char bleBuf[MAX_BLE_BUF] = {0};
+	char bleRxBuf[MAX_BLE_BUF] = {0};
+	uint8_t ble_withDMA = 0;
+	volatile uint8_t bleReady = 1;
+	uint8_t ble_stat = 0;
+	uint8_t adone = 0;
+	//
+	s_recq_t bleQueAck;
+	s_recq_t bleQueCmd;
+	bool bleQueAckFlag = false;
+	bool bleQueCmdFlag = false;
+#endif
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -268,6 +293,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_UART4_Init(void);
 /* USER CODE BEGIN PFP */
 
 #ifdef SET_FIFO_MODE
@@ -301,7 +327,113 @@ void showCfg()
 	}
 	Report(0, "%s", strf);
 }
+//-------------------------------------------------------------------------------------------
+
+#ifdef SET_BLE
+//-------------------------------------------------------------------------------------------
+uint8_t get_bleStat()
+{
+	return HAL_GPIO_ReadPin(BLE_STAT_GPIO_Port, BLE_STAT_Pin);
+}
+//-------------------------------------------------------------------------------------------
+void bleWrite(const char *str, bool prn)
+{
+	if (ble_withDMA) {
+		while (!bleRdy) {};
+		bleRdy = 0;
+		if (HAL_UART_Transmit_DMA(blePort, (uint8_t *)str, strlen(str)) != HAL_OK) devError |= devBLE;
+		while (!bleRdy) {};
+		/*while (HAL_UART_GetState(blePort) != HAL_UART_STATE_READY) {
+			if (HAL_UART_GetState(blePort) == HAL_UART_STATE_BUSY_RX) break;
+			//HAL_Delay(1);
+		}*/
+	} else {
+		if (HAL_UART_Transmit(blePort, (uint8_t *)str, strlen(str), 1000) != HAL_OK) devError |= devBLE;
+	}
+
+	if (prn) Report(1, "[BLE] %s", str);
+
+}
 //------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
+bool initRECQ(s_recq_t *q)
+{
+	q->put = q->get = 0;
+	q->lock = 0;
+	for (uint8_t i = 0; i < MAX_QREC; i++) {
+		q->rec[i].id = i;
+		q->rec[i].adr = NULL;
+	}
+
+	return true;
+}
+//-------------------------------------------------------------------------------------------
+bool clearRECQ(s_recq_t *q)
+{
+	while (q->lock) {}
+	q->lock = 1;
+
+	q->put = q->get = 0;
+	for (uint8_t i = 0; i < MAX_QREC; i++) {
+		q->rec[i].id = i;
+		free(q->rec[i].adr);
+		q->rec[i].adr = NULL;
+	}
+
+	q->lock = 0;
+
+	return false;
+}
+//-------------------------------------------------------------------------------------------
+int8_t putRECQ(char *adr, s_recq_t *q)
+{
+int8_t ret = -1;
+
+	while (q->lock) {}
+	q->lock = 1;
+
+	if (q->rec[q->put].adr == NULL) {
+		q->rec[q->put].adr = adr;
+		ret = q->rec[q->put].id;
+		q->put++;   if (q->put >= MAX_QREC) q->put = 0;
+	}
+
+	q->lock = 0;
+
+	return ret;
+}
+//-------------------------------------------------------------------------------------------
+int8_t getRECQ(char *dat, s_recq_t *q)
+{
+int8_t ret = -1;
+int len = 0;
+
+	while (q->lock) {}
+	q->lock = 1;
+
+	if (q->rec[q->get].adr != NULL) {
+		len = strlen(q->rec[q->get].adr);
+		ret = q->rec[q->get].id;
+		if (dat) memcpy(dat, q->rec[q->get].adr, len);
+		free(q->rec[q->get].adr);
+		q->rec[q->get].adr = NULL;
+	}
+
+	if (ret >= 0) {
+		if (dat) *(dat + len) = '\0';
+		q->get++;   if (q->get >= MAX_QREC) q->get = 0;
+	}
+
+	q->lock = 0;
+
+	return ret;
+}
+//-------------------------------------------------------------------------------------------
+
+#endif
+
+//-------------------------------------------------------------------------------------------
 
 /* USER CODE END 0 */
 
@@ -340,25 +472,29 @@ int main(void)
   MX_SPI2_Init();
   MX_SPI1_Init();
   MX_I2C1_Init();
+  MX_UART4_Init();
   /* USER CODE BEGIN 2 */
 
 
-  if (HAL_TIM_Base_Start_IT(tikPort) != HAL_OK) devError |= devTIK;
+    if (HAL_TIM_Base_Start_IT(tikPort) != HAL_OK) devError |= devTIK;
 
-  for (int8_t i = 0; i < 4; i++) {
-	  errLedOn(true);
-	  HAL_Delay(150);
-	  errLedOn(false);
-	  HAL_Delay(150);
-  }
+    for (int8_t i = 0; i < 4; i++) {
+    	errLedOn(true);
+    	HAL_Delay(100);
+    	errLedOn(false);
+    	HAL_Delay(100);
+    }
 
-  if (HAL_UART_Receive_IT(cmdPort, &rxByte, 1) != HAL_OK) devError |= devUART;
+    if (HAL_UART_Receive_IT(cmdPort, &rxByte, 1) != HAL_OK) devError |= devUART;
+#ifdef SET_BLE
+    if (HAL_UART_Receive_IT(blePort, &rxbByte, 1) != HAL_OK) devError |= devBLE;
+#endif
 
-  set_Date(epoch);
+    set_Date(epoch);
 
-  HAL_Delay(150);
+    HAL_Delay(100);
 
-  Report(1, "[que:%u] Start application ver.%s\r\n", cntEvt, ver);
+    Report(1, "[que:%u] Start application ver.%s\r\n", cntEvt, ver);
 
 #ifdef SET_W25FLASH
     chipPresent = W25qxx_Init();
@@ -403,7 +539,6 @@ int main(void)
   		FontDef_t Font_6x8 = { 6, 8, Font6x8 };
   		lfnt = &Font_6x8;
 	#endif
-
 
   	uint16_t lin1 = 1;
   	uint16_t lin2 = lin1 + Font_6x8.FontHeight;//chipID...
@@ -469,6 +604,15 @@ int main(void)
 
 #endif
 
+#ifdef SET_BLE
+    bleQueAckFlag   = initRECQ(&bleQueAck);
+    bleQueCmdFlag   = initRECQ(&bleQueCmd);
+
+    bleWrite("AT+RESET\r\n", 1);
+    ble_stat = get_bleStat();
+    Report(1, "[BLE] stat = %u\r\n", ble_stat);
+#endif
+
     uint16_t lastErr = devOK;
 
     putEvt(evt_Freq);
@@ -497,6 +641,7 @@ int main(void)
 #endif
     		}
     		switch (evt) {
+
     			case evt_Band:
     				Band = newBand;
     				if (!rda5807_Set_Band(Band)) {
@@ -521,7 +666,6 @@ int main(void)
     				next_evt = evt_Freq;
     				newFreq = getNextList(Freq, seek_up, &newBand);
 					if (newBand == Band) {
-						//next_evt = evt_Freq;
 						Report(1, "Band = newBand = %u -> goto set newFreq to %.1f (up = %u)\r\n", newBand, newFreq, seek_up);
     					putEvt(evt_Freq);
 					} else {
@@ -743,6 +887,22 @@ int main(void)
 #endif
 
 
+#ifdef SET_BLE
+    	if (bleQueAckFlag) {
+    		if (getRECQ(bleRxBuf, &bleQueAck) >= 0) {
+    			Report(1, "[BLE] %s\r\n", bleRxBuf);
+    		}
+    	}
+    	//
+    	if (bleQueCmdFlag) {//command to GSM module queue is ready
+    		if (getRECQ(bleBuf, &bleQueCmd) >= 0) {
+    			strcat(bleBuf, "\r\n");
+    			bleWrite(bleBuf, 1);
+    		}
+    	}
+#endif
+
+
     	if (devError) {
     		errLedOn(true);
     		HAL_Delay(50);
@@ -765,9 +925,10 @@ int main(void)
     ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
 #endif
 
+
     Report(1, "[que:%u] Stop application...\r\n", cntEvt);
 
-    HAL_Delay(500);
+    HAL_Delay(250);
 
     NVIC_SystemReset();
 
@@ -1066,6 +1227,41 @@ static void MX_TIM4_Init(void)
 }
 
 /**
+  * @brief UART4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_UART4_Init(void)
+{
+
+  /* USER CODE BEGIN UART4_Init 0 */
+
+  /* USER CODE END UART4_Init 0 */
+
+  /* USER CODE BEGIN UART4_Init 1 */
+
+  /* USER CODE END UART4_Init 1 */
+  huart4.Instance = UART4;
+  huart4.Init.BaudRate = 115200;
+  huart4.Init.WordLength = UART_WORDLENGTH_8B;
+  huart4.Init.StopBits = UART_STOPBITS_1;
+  huart4.Init.Parity = UART_PARITY_NONE;
+  huart4.Init.Mode = UART_MODE_TX_RX;
+  huart4.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart4.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart4.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart4.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN UART4_Init 2 */
+
+  /* USER CODE END UART4_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -1111,9 +1307,6 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
-  /* DMA1_Channel3_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
   /* DMA1_Channel4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
@@ -1126,6 +1319,12 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel7_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
+  /* DMA2_Channel3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Channel3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Channel3_IRQn);
+  /* DMA2_Channel4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Channel4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Channel4_IRQn);
   /* DMA2_Channel6_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Channel6_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Channel6_IRQn);
@@ -1217,6 +1416,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(SPI1_DC_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : BLE_STAT_Pin */
+  GPIO_InitStruct.Pin = BLE_STAT_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(BLE_STAT_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI1_IRQn, 0, 0);
@@ -1461,8 +1666,6 @@ bool check_mstmr(uint64_t hs)
 	return (get_msCounter() >= hs ? true : false);
 }
 //------------------------------------------------------------------------------------------
-//         Функция приводит к верхнему регистру все символы строки
-//
 void toUppers(char *st)
 {
 int i;
@@ -1614,10 +1817,66 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 	if (huart->Instance == USART2) {
 		uartRdy = 1;
 	}
+#ifdef SET_BLE
+	else
+	if (huart->Instance == UART4) {
+		bleRdy = 1;
+	}
+#endif
+}
+//-------------------------------------------------------------------------------------------
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+	if (huart->Instance == USART2) {
+		devError |= devUART;
+	}
+#ifdef SET_BLE
+	else
+	if (huart->Instance == UART4) {
+		devError |= devBLE;
+	}
+#endif
 }
 //-------------------------------------------------------------------------------------------
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
+#ifdef SET_BLE
+	if (huart->Instance == UART4) {
+		if ((rxbByte > 0x0D) && (rxbByte < 0x80)) {
+			if (rxbByte >= 0x20) adone = 1;
+			if (adone) rxbBuf[rxbInd++] = (char)rxbByte;
+		}
+		if (adone) {
+		//rxbBuf[rxbInd++] = (char)rxbByte;
+			if (rxbByte == 0x0a) {// '\n'
+				//rxbBuf[--rxbInd] = '\0';
+				if (bleQueAckFlag) {
+					int len = strlen(rxbBuf);
+					// Блок помещает в очередь ответов на команду очередное сообщение от модуля BLE
+					char *from = (char *)calloc(1, len + 1);
+					if (from) {
+						memcpy(from, rxbBuf, len);
+						if (putRECQ(from, &bleQueAck) < 0) {
+							devError |= devQUE;
+							free(from);
+						} else {
+							if (devError & devQUE) devError &= ~devQUE;
+						}
+					} else {
+						devError |= devMEM;
+					}
+					//-----------------------------------------------------------------------------
+				}
+				rxbInd = 0;
+				adone = 0;
+				memset(rxbBuf, 0, sizeof(rxbBuf));
+			}
+		}
+		//
+		if (HAL_UART_Receive_IT(huart, &rxbByte, 1) != HAL_OK) devError |= devBLE;
+	}
+	else
+#endif
 	if (huart->Instance == USART2) {
 		rxBuf[rxInd++] = (char)rxByte;
 		if (rxByte == 0x0a) {//end of line
@@ -1625,135 +1884,160 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 			int i, ev = -1;
 			if (strlen(rxBuf) > 2) {
-				for (i = 0; i < MAX_CMDS; i++) {
-					if (!strncmp(rxBuf, s_cmds[i], strlen(s_cmds[i]))) {
-						char *uk = rxBuf + strlen(s_cmds[i]);
-						ev = -1;
-						switch (i) {
-							case cmdBand://"band:2"
-								if (strlen(uk) >= 1) {
-									newBand = atol(uk);
-									if (newBand != Band) {
-										ev = i;
-									}
-								}
-							break;
-							case cmdVol:
-								if (strlen(uk) >= 1) {
-									uint8_t nv = Volume;
-									if (strstr(uk, "up")) {
-										nv++;
-									} else if (strstr(uk, "down")) {
-										nv--;
-									} else {
-										nv = (uint8_t)atol(uk);
-									}
-									if ((nv >= 0) && (nv <= 15)) {
-										newVolume = nv;
-										ev = i;
-									}
-								}
-							break;
-							case cmdBass:
-								if (strlen(uk) >= 1) {
-									newBassBoost = (uint8_t)atol(uk);
-									ev = i;
-								}
-							break;
-							case cmdFreq://"freq:95.1"
-								if (strlen(uk) >= 2) {
-									newFreq = (float)atof(uk);
-									if (newFreq != Freq) {
-										ev = i;
-									}
-								}
-							break;
-							case cmdScan://"scan"
-							case cmdList://"list"
-								seek_up = 1;
-								ev = i;
-								char *uki = strchr(uk, ':');
-								if (uki) {
-									if ((*(char *)(uki + 1) == '0') || strstr(uki + 1, "down")) seek_up = 0;
-								}
-							break;
-							case cmdClr://"clr"
-							case cmdHelp://"help"
-							case cmdVer://"ver"
-							case cmdMute://"mute"
-							case cmdCfg://"cfg"
-								ev = i;
-							break;
-							case cmdRestart://"restart" -> restart = 1;
-								ev = i;
-							break;
-							case cmdEpoch://"epoch:1657191323"
-								if (strlen(uk) >= 10) {
-									char *uki = strchr(uk, ':');
-									if (uki) {
-										tZone = (uint8_t)atol(uki + 1);
-										*uki = '\0';
-									} else {
-										tZone = 0;
-									}
-									epoch = (uint32_t)atol(uk);
-									ev = i;
-								}
-							break;
-							case cmdsRead:// read:0
-							case cmdsErase:// erase:0
-								if (i == cmdsRead) cmd_sector = cmdsRead;
-											  else cmd_sector = cmdsErase;
-								if (*uk == ':') {
-									int sek = atoi(++uk);
-									if ( ((sek >= 0) && (sek < W25qxx_getSectorCount())) || (sek == -1) ) {
-										adr_sector = sek;
-										offset_sector = 0;
-										if (sek == -1) {
-											if (cmd_sector == cmdsErase) ev = i;
-										} else {
+#ifdef SET_BLE
+				if ( (strstr(rxBuf, "at+")) || (strstr(rxBuf, "AT+")) ) {
+					if (bleQueCmdFlag) {
+						int len = strlen(rxBuf);
+						// Блок помещает в очередь команд очередную команду модулю BLE
+						char *to = (char *)calloc(1, len + 3);
+						if (to) {
+							memcpy(to, rxBuf, len);
+							toUppers(to);
+							if (putRECQ(to, &bleQueCmd) < 0) {
+								devError |= devQUE;
+								free(to);
+							} else {
+								if (devError & devQUE) devError &= ~devQUE;
+							}
+						} else {
+							devError |= devMEM;
+						}
+					}
+					ev = -2;
+				} else {
+#endif
+					for (i = 0; i < MAX_CMDS; i++) {
+						if (!strncmp(rxBuf, s_cmds[i], strlen(s_cmds[i]))) {
+							char *uk = rxBuf + strlen(s_cmds[i]);
+							ev = -1;
+							switch (i) {
+								case cmdBand://"band:2"
+									if (strlen(uk) >= 1) {
+										newBand = atol(uk);
+										if (newBand != Band) {
 											ev = i;
 										}
 									}
-								}
-							break;
-							case cmdsWrite:// write:0:a5 | write:0:a5:256
-								if (*uk == ':') {
-									uk++;
-									int sek = atoi(uk);
-									if ((sek >= 0) && (sek < W25qxx_getSectorCount())) {
-										char *ukn = strchr(uk, ':');
-										if (ukn) {
-											len_write = -1;
-											ukn++;
-											byte_write = hexToBin(ukn);
-											uk = strchr(ukn, ':');
-											if (uk) {
-												int l = atoi(++uk);
-												if ((l > 0) && (l < W25qxx_getSectorSize())) len_write = l;
-											}
+								break;
+								case cmdVol:
+									if (strlen(uk) >= 1) {
+										uint8_t nv = Volume;
+										if (strstr(uk, "up")) {
+											nv++;
+										} else if (strstr(uk, "down")) {
+											nv--;
+										} else {
+											nv = (uint8_t)atol(uk);
+										}
+										if ((nv >= 0) && (nv <= 15)) {
+											newVolume = nv;
+											ev = i;
+										}
+									}
+								break;
+								case cmdBass:
+									if (strlen(uk) >= 1) {
+										newBassBoost = (uint8_t)atol(uk);
+										ev = i;
+									}
+								break;
+								case cmdFreq://"freq:95.1"
+									if (strlen(uk) >= 2) {
+										newFreq = (float)atof(uk);
+										if (newFreq != Freq) {
+											ev = i;
+										}
+									}
+								break;
+								case cmdScan://"scan"
+								case cmdList://"list"
+									seek_up = 1;
+									ev = i;
+									char *uki = strchr(uk, ':');
+									if (uki) {
+										if ((*(char *)(uki + 1) == '0') || strstr(uki + 1, "down")) seek_up = 0;
+									}
+								break;
+								case cmdClr://"clr"
+								case cmdHelp://"help"
+								case cmdVer://"ver"
+								case cmdMute://"mute"
+								case cmdCfg://"cfg"
+								case cmdRestart://"restart" -> restart = 1;
+									ev = i;
+								break;
+								case cmdEpoch://"epoch:1657191323"
+									if (strlen(uk) >= 10) {
+										char *uki = strchr(uk, ':');
+										if (uki) {
+											tZone = (uint8_t)atol(uki + 1);
+											*uki = '\0';
+										} else {
+											tZone = 0;
+										}
+										epoch = (uint32_t)atol(uk);
+										ev = i;
+									}
+								break;
+								case cmdsRead:// read:0
+								case cmdsErase:// erase:0
+									if (i == cmdsRead) cmd_sector = cmdsRead;
+												  else cmd_sector = cmdsErase;
+									if (*uk == ':') {
+										int sek = atoi(++uk);
+										if ( ((sek >= 0) && (sek < W25qxx_getSectorCount())) || (sek == -1) ) {
 											adr_sector = sek;
 											offset_sector = 0;
+											if (sek == -1) {
+												if (cmd_sector == cmdsErase) ev = i;
+											} else {
+												ev = i;
+											}
+										}
+									}
+								break;
+								case cmdsWrite:// write:0:a5 | write:0:a5:256
+									if (*uk == ':') {
+										uk++;
+										int sek = atoi(uk);
+										if ((sek >= 0) && (sek < W25qxx_getSectorCount())) {
+											char *ukn = strchr(uk, ':');
+											if (ukn) {
+												len_write = -1;
+												ukn++;
+												byte_write = hexToBin(ukn);
+												uk = strchr(ukn, ':');
+												if (uk) {
+													int l = atoi(++uk);
+													if ((l > 0) && (l < W25qxx_getSectorSize())) len_write = l;
+												}
+												adr_sector = sek;
+												offset_sector = 0;
+												ev = i;//flag_sector = true;
+											}
+										}
+									}
+								break;
+								case cmdsNext:// next
+									if ((last_cmd_sector == cmdsRead) || (last_cmd_sector == cmdsNext)) {
+										if ((offset_sector + list_sector) < W25qxx_getSectorSize()) {
+											offset_sector += list_sector;
 											ev = i;//flag_sector = true;
 										}
 									}
-								}
-							break;
-							case cmdsNext:// next
-								if ((last_cmd_sector == cmdsRead) || (last_cmd_sector == cmdsNext)) {
-									if ((offset_sector + list_sector) < W25qxx_getSectorSize()) {
-										offset_sector += list_sector;
-										ev = i;//flag_sector = true;
-									}
-								}
+								break;
+							}
 							break;
 						}
-						break;
 					}
+#ifdef SET_BLE
 				}
+#endif
 				//
-				if (ev == -1) ev = cmdErr;
-				putEvt(ev);
+				if (ev != -2) {
+					if (ev == -1) ev = cmdErr;
+					putEvt(ev);
+				}
 				//
 			}
 
@@ -1762,13 +2046,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		}
 
 		if (HAL_UART_Receive_IT(huart, &rxByte, 1) != HAL_OK) devError |= devUART;
-	}
-}
-//-------------------------------------------------------------------------------------------
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
-{
-	if (huart->Instance == USART2) {
-		devError |= devUART;
 	}
 }
 //-------------------------------------------------------------------------------------------

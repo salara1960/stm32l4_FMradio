@@ -14,6 +14,8 @@
 #define SET_DISPLAY
 #define SET_RDA_CHIP
 //#define SET_FAT_FS
+#define SET_BLE
+#define SET_QUEUE
 
 
 #endif /* INC_HDR_H_ */
