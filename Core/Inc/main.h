@@ -87,7 +87,8 @@ enum {
 	cmdBass,
 	cmdList,
 	cmdBand,
-	cmdCfg
+	cmdCfg,
+	cmdWakeUp
 };
 
 enum {
@@ -110,7 +111,8 @@ enum {
 	evt_Bass,
 	evt_List,
 	evt_Band,
-	evt_Cfg
+	evt_Cfg,
+	evt_WakeUp
 };
 
 
@@ -188,7 +190,7 @@ enum {
 #ifdef SET_BLE
 	#define MAX_BLE_BUF  256
 #endif
-#define MAX_CMDS          19
+#define MAX_CMDS          20
 #define MAX_LIST          25
 #define MAX_BAND           4
 #define MAX_STEP           4
@@ -245,6 +247,8 @@ void Report(const uint8_t addTime, const char *fmt, ...);
 #define SPI1_RST_GPIO_Port GPIOD
 #define SPI1_DC_Pin GPIO_PIN_5
 #define SPI1_DC_GPIO_Port GPIOB
+#define WAKEUP_Pin GPIO_PIN_8
+#define WAKEUP_GPIO_Port GPIOB
 #define BLE_STAT_Pin GPIO_PIN_9
 #define BLE_STAT_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
@@ -292,6 +296,9 @@ typedef struct s_recq_t {
 	que_rec_t rec[MAX_QREC];
 } s_recq_t;
 #pragma pack(pop)
+
+#define WAKEUP_DOWN() WAKEUP_GPIO_Port->BSRR = (WAKEUP_Pin << 16)
+#define WAKEUP_UP() WAKEUP_GPIO_Port->BSRR = WAKEUP_Pin;
 
 #endif
 

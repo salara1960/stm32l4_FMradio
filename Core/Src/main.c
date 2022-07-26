@@ -85,7 +85,8 @@ DMA_HandleTypeDef hdma_usart2_tx;
 //const char *ver = "1.3 23.07.22";
 //const char *ver = "1.4 24.07.22";// new feature for 'list' command
 //const char *ver = "1.4.2 25.07.22";// without FatFs release
-const char *ver = "1.5 26.07.22";// add bluetooth device 'JDY-25M'
+//const char *ver = "1.5 26.07.22";// add bluetooth device 'JDY-25M'
+const char *ver = "1.5.1 26.07.22";// add sleep/wakeup features for BLE device
 
 
 
@@ -111,7 +112,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
+static uint32_t epoch = 1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
 //1657971799;1657915595;1657635512;1657313424;//1657283440;//1657234028;//1657200272;//1657194633;//1657144926;
@@ -138,7 +139,8 @@ const char *s_cmds[MAX_CMDS] = {
 	"bass:",
 	"list",
 	"band:",
-	"cfg"
+	"cfg",
+	"wakeup"
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -159,7 +161,8 @@ const char *str_cmds[MAX_CMDS] = {
 	"BassBoost",
 	"nextStation",
 	"Band",
-	"cfgStations"
+	"cfgStations",
+	"BleWakeUp"
 };
 
 #ifdef SET_FIFO_MODE
@@ -330,6 +333,13 @@ void showCfg()
 //-------------------------------------------------------------------------------------------
 
 #ifdef SET_BLE
+//-------------------------------------------------------------------------------------------
+void bleWakeUp()
+{
+	WAKEUP_DOWN();
+	HAL_Delay(100);
+	WAKEUP_UP();
+}
 //-------------------------------------------------------------------------------------------
 uint8_t get_bleStat()
 {
@@ -641,7 +651,9 @@ int main(void)
 #endif
     		}
     		switch (evt) {
-
+    			case evt_WakeUp:
+    				bleWakeUp();
+    			break;
     			case evt_Band:
     				Band = newBand;
     				if (!rda5807_Set_Band(Band)) {
@@ -1354,7 +1366,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(SPI1_CS_GPIO_Port, SPI1_CS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin|SPI1_DC_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin|SPI1_DC_Pin|WAKEUP_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
@@ -1416,6 +1428,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(SPI1_DC_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : WAKEUP_Pin */
+  GPIO_InitStruct.Pin = WAKEUP_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+  HAL_GPIO_Init(WAKEUP_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : BLE_STAT_Pin */
   GPIO_InitStruct.Pin = BLE_STAT_Pin;
@@ -1964,6 +1983,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 								case cmdMute://"mute"
 								case cmdCfg://"cfg"
 								case cmdRestart://"restart" -> restart = 1;
+								case cmdWakeUp://"wakeup"
 									ev = i;
 								break;
 								case cmdEpoch://"epoch:1657191323"
