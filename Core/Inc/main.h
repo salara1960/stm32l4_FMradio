@@ -69,6 +69,7 @@ enum {
 };
 
 enum {
+	cmdNone = -1,
 	cmdHelp = 0,
 	cmdRestart,
 	cmdEpoch,
@@ -88,7 +89,8 @@ enum {
 	cmdList,
 	cmdBand,
 	cmdCfg,
-	cmdWakeUp
+	cmdWakeUp,
+	cmdFromSleep
 };
 
 enum {
@@ -112,7 +114,8 @@ enum {
 	evt_List,
 	evt_Band,
 	evt_Cfg,
-	evt_WakeUp
+	evt_WakeUp,
+	evt_FromSleep
 };
 
 
@@ -190,7 +193,7 @@ enum {
 #ifdef SET_BLE
 	#define MAX_BLE_BUF  256
 #endif
-#define MAX_CMDS          20
+#define MAX_CMDS          21
 #define MAX_LIST          25
 #define MAX_BAND           4
 #define MAX_STEP           4
@@ -223,8 +226,6 @@ void Report(const uint8_t addTime, const char *fmt, ...);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define TIK_LED_Pin GPIO_PIN_0
-#define TIK_LED_GPIO_Port GPIOC
 #define KEY0_Pin GPIO_PIN_1
 #define KEY0_GPIO_Port GPIOC
 #define KEY0_EXTI_IRQn EXTI1_IRQn
@@ -233,6 +234,10 @@ void Report(const uint8_t addTime, const char *fmt, ...);
 #define KEY1_EXTI_IRQn EXTI2_IRQn
 #define ERR_LED_Pin GPIO_PIN_3
 #define ERR_LED_GPIO_Port GPIOC
+#define CPU_WAKEUP_Pin GPIO_PIN_0
+#define CPU_WAKEUP_GPIO_Port GPIOA
+#define TIK_LED_Pin GPIO_PIN_1
+#define TIK_LED_GPIO_Port GPIOA
 #define LOG_TX_Pin GPIO_PIN_2
 #define LOG_TX_GPIO_Port GPIOA
 #define LOG_RX_Pin GPIO_PIN_3
@@ -247,8 +252,8 @@ void Report(const uint8_t addTime, const char *fmt, ...);
 #define SPI1_RST_GPIO_Port GPIOD
 #define SPI1_DC_Pin GPIO_PIN_5
 #define SPI1_DC_GPIO_Port GPIOB
-#define WAKEUP_Pin GPIO_PIN_8
-#define WAKEUP_GPIO_Port GPIOB
+#define BLE_WAKEUP_Pin GPIO_PIN_8
+#define BLE_WAKEUP_GPIO_Port GPIOB
 #define BLE_STAT_Pin GPIO_PIN_9
 #define BLE_STAT_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
@@ -297,11 +302,15 @@ typedef struct s_recq_t {
 } s_recq_t;
 #pragma pack(pop)
 
-#define WAKEUP_DOWN() WAKEUP_GPIO_Port->BSRR = (WAKEUP_Pin << 16)
-#define WAKEUP_UP() WAKEUP_GPIO_Port->BSRR = WAKEUP_Pin;
+#define BLE_WAKEUP_DOWN() BLE_WAKEUP_GPIO_Port->BSRR = (BLE_WAKEUP_Pin << 16)
+#define BLE_WAKEUP_UP() BLE_WAKEUP_GPIO_Port->BSRR = BLE_WAKEUP_Pin;
 
 #endif
 
+
+#ifdef SET_SLEEP
+	#define WAIT_BEFORE_SLEEP 30
+#endif
 
 /* USER CODE END Private defines */
 

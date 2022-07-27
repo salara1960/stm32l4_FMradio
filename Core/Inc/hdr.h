@@ -16,6 +16,7 @@
 //#define SET_FAT_FS
 #define SET_BLE
 #define SET_QUEUE
+#define SET_SLEEP
 
 
 #endif /* INC_HDR_H_ */

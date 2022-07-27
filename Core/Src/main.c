@@ -57,10 +57,10 @@ DMA_HandleTypeDef hdma_spi2_tx;
 
 TIM_HandleTypeDef htim4;
 
-UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart2;
-DMA_HandleTypeDef hdma_uart4_tx;
+UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart2_tx;
+DMA_HandleTypeDef hdma_usart3_tx;
 
 /* USER CODE BEGIN PV */
 
@@ -86,7 +86,8 @@ DMA_HandleTypeDef hdma_usart2_tx;
 //const char *ver = "1.4 24.07.22";// new feature for 'list' command
 //const char *ver = "1.4.2 25.07.22";// without FatFs release
 //const char *ver = "1.5 26.07.22";// add bluetooth device 'JDY-25M'
-const char *ver = "1.5.1 26.07.22";// add sleep/wakeup features for BLE device
+//const char *ver = "1.5.1 26.07.22";// add sleep/wakeup features for BLE device
+const char *ver = "1.5.2 27.07.22";// add sleep/wakeup features for CPU+BLE
 
 
 
@@ -112,7 +113,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
+static uint32_t epoch = 1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
 //1657971799;1657915595;1657635512;1657313424;//1657283440;//1657234028;//1657200272;//1657194633;//1657144926;
@@ -140,7 +141,8 @@ const char *s_cmds[MAX_CMDS] = {
 	"list",
 	"band:",
 	"cfg",
-	"wakeup"
+	"wakeup",
+	"fromsleep"
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -162,7 +164,8 @@ const char *str_cmds[MAX_CMDS] = {
 	"nextStation",
 	"Band",
 	"cfgStations",
-	"BleWakeUp"
+	"BleWakeUp",
+	"FromSleep"
 };
 
 #ifdef SET_FIFO_MODE
@@ -264,7 +267,7 @@ uint8_t spiRdy = 1;
 
 
 #ifdef SET_BLE
-	UART_HandleTypeDef *blePort = &huart4;
+	UART_HandleTypeDef *blePort = &huart3;
 	uint8_t bleRdy = 1;
 	uint8_t rxbByte = 0;
 	uint16_t rxbInd = 0;
@@ -283,6 +286,11 @@ uint8_t spiRdy = 1;
 	bool bleQueCmdFlag = false;
 #endif
 
+#ifdef SET_SLEEP
+	uint32_t start_sleep = 0;
+	bool sleep_mode = false;
+#endif
+
 
 /* USER CODE END PV */
 
@@ -296,7 +304,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_I2C1_Init(void);
-static void MX_UART4_Init(void);
+static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 #ifdef SET_FIFO_MODE
@@ -336,9 +344,9 @@ void showCfg()
 //-------------------------------------------------------------------------------------------
 void bleWakeUp()
 {
-	WAKEUP_DOWN();
+	BLE_WAKEUP_DOWN();
 	HAL_Delay(100);
-	WAKEUP_UP();
+	BLE_WAKEUP_UP();
 }
 //-------------------------------------------------------------------------------------------
 uint8_t get_bleStat()
@@ -348,6 +356,8 @@ uint8_t get_bleStat()
 //-------------------------------------------------------------------------------------------
 void bleWrite(const char *str, bool prn)
 {
+	if (sleep_mode) return;
+
 	if (ble_withDMA) {
 		while (!bleRdy) {};
 		bleRdy = 0;
@@ -482,7 +492,7 @@ int main(void)
   MX_SPI2_Init();
   MX_SPI1_Init();
   MX_I2C1_Init();
-  MX_UART4_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
 
@@ -563,7 +573,7 @@ int main(void)
   	ST7565_Reset();
   	ST7565_Init();
 
-  	ST7565_CMD_DISPLAY(CMD_DISPLAY_ON);
+  	//ST7565_CMD_DISPLAY(CMD_DISPLAY_ON);
 
     int dl = sprintf(tmp, "Ver.%s", ver);
     uint16_t x = ((SCREEN_WIDTH - (Font_6x8.FontWidth * dl)) >> 1) & 0x7f;
@@ -610,6 +620,8 @@ int main(void)
     ST7565_DrawFilledRectangle(0, 0, SCREEN_WIDTH - 1, Font_6x8.FontHeight, PIX_ON);
     ST7565_Update();
 
+    //ST7565_CMD_DISPLAY(CMD_DISPLAY_ON);
+
     startSec = true;
 
 #endif
@@ -618,9 +630,17 @@ int main(void)
     bleQueAckFlag   = initRECQ(&bleQueAck);
     bleQueCmdFlag   = initRECQ(&bleQueCmd);
 
+    bleWakeUp();
+
     bleWrite("AT+RESET\r\n", 1);
     ble_stat = get_bleStat();
     Report(1, "[BLE] stat = %u\r\n", ble_stat);
+#endif
+
+
+#ifdef SET_SLEEP
+    start_sleep = get_tmr(WAIT_BEFORE_SLEEP);
+    sleep_mode = false;
 #endif
 
     uint16_t lastErr = devOK;
@@ -634,6 +654,30 @@ int main(void)
 
 
     while (!restart) {
+
+#ifdef SET_SLEEP
+    	if (start_sleep ) {
+    		if (check_tmr(start_sleep)) {
+    			start_sleep = 0;
+    			Report(1, "Going into SLEEP MODE in 1 second\r\n");
+	#ifdef SET_BLE
+    			bleWrite("AT+SLEEP1\r\n", 1);
+	#endif
+	#ifdef SET_DISPLAY
+    			ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
+	#endif
+    			HAL_Delay(1000);
+    			//
+    			HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
+    			sleep_mode = true;
+    			HAL_SuspendTick();
+    			HAL_PWR_EnableSleepOnExit();
+    			//	  Enter Sleep Mode , wake up is done once User push-button is pressed
+    			HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+    			HAL_ResumeTick();
+    		}
+    	}
+#endif
 
 
 #ifdef SET_FIFO_MODE
@@ -651,8 +695,21 @@ int main(void)
 #endif
     		}
     		switch (evt) {
+    			case evt_FromSleep:
+    				Report(1, "Outoff SLEEP MODE\r\n");
+    				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
+#ifdef SET_DISPLAY
+    				ST7565_CMD_DISPLAY(CMD_DISPLAY_ON);
+#endif
+#ifdef SET_BLE
+    				putEvt(evt_WakeUp);
+#endif
+    				if (!start_sleep) start_sleep = get_tmr(WAIT_BEFORE_SLEEP);
+    			break;
     			case evt_WakeUp:
+#ifdef SET_BLE
     				bleWakeUp();
+#endif
     			break;
     			case evt_Band:
     				Band = newBand;
@@ -1239,41 +1296,6 @@ static void MX_TIM4_Init(void)
 }
 
 /**
-  * @brief UART4 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_UART4_Init(void)
-{
-
-  /* USER CODE BEGIN UART4_Init 0 */
-
-  /* USER CODE END UART4_Init 0 */
-
-  /* USER CODE BEGIN UART4_Init 1 */
-
-  /* USER CODE END UART4_Init 1 */
-  huart4.Instance = UART4;
-  huart4.Init.BaudRate = 115200;
-  huart4.Init.WordLength = UART_WORDLENGTH_8B;
-  huart4.Init.StopBits = UART_STOPBITS_1;
-  huart4.Init.Parity = UART_PARITY_NONE;
-  huart4.Init.Mode = UART_MODE_TX_RX;
-  huart4.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart4.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart4.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart4.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN UART4_Init 2 */
-
-  /* USER CODE END UART4_Init 2 */
-
-}
-
-/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -1309,6 +1331,41 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART3_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART3_Init 0 */
+
+  /* USER CODE END USART3_Init 0 */
+
+  /* USER CODE BEGIN USART3_Init 1 */
+
+  /* USER CODE END USART3_Init 1 */
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 115200;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart3.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART3_Init 2 */
+
+  /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -1319,6 +1376,9 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Channel2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
   /* DMA1_Channel4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
@@ -1331,9 +1391,6 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel7_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
-  /* DMA2_Channel3_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Channel3_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA2_Channel3_IRQn);
   /* DMA2_Channel4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Channel4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Channel4_IRQn);
@@ -1360,26 +1417,22 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, TIK_LED_Pin|ERR_LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(ERR_LED_GPIO_Port, ERR_LED_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(TIK_LED_GPIO_Port, TIK_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(SPI1_CS_GPIO_Port, SPI1_CS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin|SPI1_DC_Pin|WAKEUP_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin|SPI1_DC_Pin|BLE_WAKEUP_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(SPI1_RST_GPIO_Port, SPI1_RST_Pin, GPIO_PIN_SET);
-
-  /*Configure GPIO pin : TIK_LED_Pin */
-  GPIO_InitStruct.Pin = TIK_LED_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-  HAL_GPIO_Init(TIK_LED_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : KEY0_Pin KEY1_Pin */
   GPIO_InitStruct.Pin = KEY0_Pin|KEY1_Pin;
@@ -1393,6 +1446,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
   HAL_GPIO_Init(ERR_LED_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : CPU_WAKEUP_Pin */
+  GPIO_InitStruct.Pin = CPU_WAKEUP_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(CPU_WAKEUP_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : TIK_LED_Pin */
+  GPIO_InitStruct.Pin = TIK_LED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(TIK_LED_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : SPI1_CS_Pin */
   GPIO_InitStruct.Pin = SPI1_CS_Pin;
@@ -1429,12 +1495,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(SPI1_DC_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : WAKEUP_Pin */
-  GPIO_InitStruct.Pin = WAKEUP_Pin;
+  /*Configure GPIO pin : BLE_WAKEUP_Pin */
+  GPIO_InitStruct.Pin = BLE_WAKEUP_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-  HAL_GPIO_Init(WAKEUP_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(BLE_WAKEUP_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : BLE_STAT_Pin */
   GPIO_InitStruct.Pin = BLE_STAT_Pin;
@@ -1776,13 +1842,22 @@ int ret = 0;
 //--------------------------------------------------------------------------------------------
 void Report(const uint8_t addTime, const char *fmt, ...)
 {
-size_t len = MAX_UART_BUF;
-char *buf = &cmdBuf[0];
-uint32_t cnt = 16;
-uint32_t stim = HAL_GetTick();
+#ifdef SET_BLE
+	if(sleep_mode) return;
+#endif
 
+	size_t len = MAX_UART_BUF;
+	char *buf = &cmdBuf[0];
+
+	uint8_t cnt = 32;
+	uint32_t stim = HAL_GetTick();
+	uint32_t etim = stim;
 	while (!uartRdy && cnt) {
-		if (HAL_GetTick() - stim) cnt--;
+		etim = HAL_GetTick();
+		if (etim - stim) {
+			stim = HAL_GetTick();
+			cnt--;
+		}
 	}
 
 	//if (buf) {
@@ -1826,6 +1901,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		  	if (startSec) putEvt(evt_Sec);
 #endif
 	  	}
+#ifdef SET_SLEEP
+		if (sleep_mode) {
+			if (HAL_GPIO_ReadPin(CPU_WAKEUP_GPIO_Port, CPU_WAKEUP_Pin) == GPIO_PIN_SET) {
+				sleep_mode = false;
+				HAL_PWR_DisableSleepOnExit ();
+				//HAL_ResumeTick();
+				putEvt(cmdFromSleep);
+			}
+		}
+#endif
 	}
 }
 //--------------------------------------------------------------------------------------------
@@ -1838,7 +1923,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 	}
 #ifdef SET_BLE
 	else
-	if (huart->Instance == UART4) {
+	if (huart->Instance == USART3) {
 		bleRdy = 1;
 	}
 #endif
@@ -1851,7 +1936,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 	}
 #ifdef SET_BLE
 	else
-	if (huart->Instance == UART4) {
+	if (huart->Instance == USART3) {
 		devError |= devBLE;
 	}
 #endif
@@ -1860,7 +1945,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 #ifdef SET_BLE
-	if (huart->Instance == UART4) {
+	if (huart->Instance == USART3) {
 		if ((rxbByte > 0x0D) && (rxbByte < 0x80)) {
 			if (rxbByte >= 0x20) adone = 1;
 			if (adone) rxbBuf[rxbInd++] = (char)rxbByte;
@@ -1903,6 +1988,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 			int i, ev = -1;
 			if (strlen(rxBuf) > 2) {
+#ifdef SET_SLEEP
+				start_sleep = get_tmr(WAIT_BEFORE_SLEEP);
+#endif
 #ifdef SET_BLE
 				if ( (strstr(rxBuf, "at+")) || (strstr(rxBuf, "AT+")) ) {
 					if (bleQueCmdFlag) {
@@ -2138,18 +2226,76 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 //--------------------------------------------------------------------------------------------
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-	if ((GPIO_Pin != KEY0_Pin) && (GPIO_Pin != KEY1_Pin)) return;
-
-	if (GPIO_Pin == KEY0_Pin) seek_up = 1;
-	else
-	if (GPIO_Pin == KEY1_Pin) seek_up = 0;
-
-	putEvt(cmdScan);
+	if ((GPIO_Pin == KEY0_Pin) || (GPIO_Pin == KEY1_Pin)) {
+		if (GPIO_Pin == KEY0_Pin) seek_up = 1;
+		else
+		if (GPIO_Pin == KEY1_Pin) seek_up = 0;
+		putEvt(cmdScan);
+	}
 }
 //--------------------------------------------------------------------------------------------
 
 
 //*******************************************************************************************
+
+/*********************************   SLEEP MODE   ***********************************
+uint8_t Rx_data;
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    HAL_UART_Receive_IT(huart, &Rx_data, 1);
+    str = "WakeUP from SLEEP by UART\r\n";
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen (str), HAL_MAX_DELAY);
+}
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    str = "WakeUP from SLEEP by EXTI\r\n";
+    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen (str), HAL_MAX_DELAY);
+    HAL_PWR_DisableSleepOnExit ();
+}
+
+int main ()
+{
+ ......
+ ......
+ HAL_UART_Receive_IT(&huart2, &Rx_data, 1);
+ while (1)
+  {
+	  str = "Going into SLEEP MODE in 5 seconds\r\n";
+	  HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen (str), HAL_MAX_DELAY);
+
+	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
+  	  HAL_Delay(5000);
+
+//    Suspend Tick increment to prevent wakeup by Systick interrupt.
+//	  Otherwise the Systick interrupt will wake up the device within 1ms (HAL time base)
+//
+	  HAL_SuspendTick();
+
+	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);  // Just to indicate that the sleep mode is activated
+
+	  HAL_PWR_EnableSleepOnExit ();
+
+//	  Enter Sleep Mode , wake up is done once User push-button is pressed
+	  HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+
+
+
+//	  Resume Tick interrupt if disabled prior to sleep mode entry
+	  HAL_ResumeTick();
+
+	  str = "WakeUP from SLEEP\r\n";
+	  HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen (str), HAL_MAX_DELAY);
+
+	  for (int i=0; i<20; i++)
+	  {
+		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+		  HAL_Delay(100);
+	  }
+
+  }
+}
+*********************************************************************************************/
 
 /* USER CODE END 4 */
 
