@@ -401,10 +401,9 @@ void ST7565_CMD_DISPLAY(uint8_t byte)
 {
 #ifdef SET_NEW_PROC
 	ST7565_w_cmds(&byte, 1);
-	if (byte == CMD_DISPLAY_OFF)
-		OFF_DISPLAY();
-	else
-		ON_DISPLAY();
+
+	if (byte == CMD_DISPLAY_OFF) OFF_DISPLAY();
+							else ON_DISPLAY();
 #else
 	ST7565_w_cmd(byte);
 #endif

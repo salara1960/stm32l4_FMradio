@@ -144,7 +144,8 @@ const char *s_cmds[MAX_CMDS] = {
 	"band:",
 	"cfg",
 	"wakeup",
-	"fromsleep"
+	"fromsleep",
+	"sleep"
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -167,7 +168,8 @@ const char *str_cmds[MAX_CMDS] = {
 	"Band",
 	"cfgStations",
 	"BleWakeUp",
-	"FromSleep"
+	"FromSleep",
+	"Sleep"
 };
 
 #ifdef SET_FIFO_MODE
@@ -289,8 +291,9 @@ uint8_t spiRdy = 1;
 #endif
 
 #ifdef SET_SLEEP
-	uint32_t start_sleep = 0;
+	//uint32_t start_sleep = 0;
 	bool sleep_mode = false;
+	uint32_t tms = 0;
 #endif
 
 
@@ -575,8 +578,6 @@ int main(void)
   	ST7565_Reset();
   	ST7565_Init();
 
-  	//ST7565_CMD_DISPLAY(CMD_DISPLAY_ON);
-
     int dl = sprintf(tmp, "Ver.%s", ver);
     uint16_t x = ((SCREEN_WIDTH - (Font_6x8.FontWidth * dl)) >> 1) & 0x7f;
     ST7565_Print(x, SCREEN_HEIGHT - Font_6x8.FontHeight, tmp, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
@@ -622,8 +623,6 @@ int main(void)
     ST7565_DrawFilledRectangle(0, 0, SCREEN_WIDTH - 1, Font_6x8.FontHeight, PIX_ON);
     ST7565_Update();
 
-    //ST7565_CMD_DISPLAY(CMD_DISPLAY_ON);
-
     startSec = true;
 
 #endif
@@ -641,7 +640,7 @@ int main(void)
 
 
 #ifdef SET_SLEEP
-    start_sleep = get_tmr(WAIT_BEFORE_SLEEP);
+    //start_sleep = 0;//get_tmr(WAIT_BEFORE_SLEEP);
     sleep_mode = false;
 #endif
 
@@ -656,7 +655,7 @@ int main(void)
 
 
     while (!restart) {
-
+/*
 #ifdef SET_SLEEP
     	if (start_sleep ) {
     		if (check_tmr(start_sleep)) {
@@ -680,7 +679,7 @@ int main(void)
     		}
     	}
 #endif
-
+*/
 
 #ifdef SET_FIFO_MODE
     	evt = getEvt();
@@ -697,8 +696,27 @@ int main(void)
 #endif
     		}
     		switch (evt) {
-    			case evt_FromSleep:
-    				Report(1, "Outoff SLEEP MODE\r\n");
+    			case evt_Sleep:
+    				//Report(1, "Going into SLEEP MODE...\r\n");// in 1 second\r\n");
+#ifdef SET_BLE
+    				bleWrite("AT+SLEEP1\r\n", 1);
+#endif
+#ifdef SET_DISPLAY
+    				ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
+#endif
+    				HAL_Delay(500);
+    				//
+    				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
+    				sleep_mode = true;
+    				//
+    				HAL_SuspendTick();
+    				HAL_PWR_EnableSleepOnExit();
+    				HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+    				HAL_ResumeTick();
+    				//
+    			break;
+    			case evt_ExitSleep:
+    				//Report(1, "Exit from SLEEP MODE\r\n");
     				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
 #ifdef SET_DISPLAY
     				ST7565_CMD_DISPLAY(CMD_DISPLAY_ON);
@@ -706,7 +724,7 @@ int main(void)
 #ifdef SET_BLE
     				putEvt(evt_WakeUp);
 #endif
-    				if (!start_sleep) start_sleep = get_tmr(WAIT_BEFORE_SLEEP);
+    				//if (!start_sleep) start_sleep = get_tmr(WAIT_BEFORE_SLEEP);
     			break;
     			case evt_WakeUp:
 #ifdef SET_BLE
@@ -1913,10 +1931,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 #ifdef SET_SLEEP
 		if (sleep_mode) {
 			if (HAL_GPIO_ReadPin(CPU_WAKEUP_GPIO_Port, CPU_WAKEUP_Pin) == GPIO_PIN_SET) {
-				sleep_mode = false;
-				HAL_PWR_DisableSleepOnExit ();
-				//HAL_ResumeTick();
-				putEvt(cmdFromSleep);
+				/*if (!tms) tms = HAL_GetTick();
+				else
+				if ((HAL_GetTick() - tms) > 500) {*/
+					sleep_mode = false;
+					//tms = 0;
+					HAL_PWR_DisableSleepOnExit();
+					putEvt(cmdExitSleep);
+				/*}*/
 			}
 		}
 #endif
@@ -1997,9 +2019,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 			int i, ev = -1;
 			if (strlen(rxBuf) > 2) {
-#ifdef SET_SLEEP
-				start_sleep = get_tmr(WAIT_BEFORE_SLEEP);
-#endif
+//#ifdef SET_SLEEP
+//				start_sleep = get_tmr(WAIT_BEFORE_SLEEP);
+//#endif
 #ifdef SET_BLE
 				if ( (strstr(rxBuf, "at+")) || (strstr(rxBuf, "AT+")) ) {
 					if (bleQueCmdFlag) {
@@ -2081,6 +2103,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 								case cmdCfg://"cfg"
 								case cmdRestart://"restart" -> restart = 1;
 								case cmdWakeUp://"wakeup"
+								case cmdSleep://"sleep" -> goto sleep mode
 									ev = i;
 								break;
 								case cmdEpoch://"epoch:1657191323"
