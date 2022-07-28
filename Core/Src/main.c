@@ -2231,7 +2231,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 #ifdef SET_SLEEP
 	if (sleep_mode) {
-		if (HAL_GPIO_ReadPin(CPU_WAKEUP_GPIO_Port, CPU_WAKEUP_Pin) == GPIO_PIN_SET) {
+		if ((HAL_GPIO_ReadPin(KEY0_GPIO_Port, KEY0_Pin) == GPIO_PIN_SET) ||
+				(HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_SET)) {
 			sleep_mode = false;
 			HAL_PWR_DisableSleepOnExit();
 			putEvt(cmdExitSleep);
