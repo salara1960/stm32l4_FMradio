@@ -115,7 +115,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1659015162;//1659001909;
+static uint32_t epoch = 1659040054;//1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
@@ -146,7 +146,8 @@ const char *s_cmds[MAX_CMDS] = {
 	"cfg",
 	"wakeup",
 	"exitsleep",
-	"sleep"
+	"sleep",
+	"sleepcont"
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -170,7 +171,8 @@ const char *str_cmds[MAX_CMDS] = {
 	"cfgStations",
 	"BleWakeUp",
 	"ExitSleep",
-	"Sleep"
+	"Sleep",
+	"SleepCont"
 };
 
 #ifdef SET_FIFO_MODE
@@ -671,6 +673,14 @@ int main(void)
 #endif
     		}
     		switch (evt) {
+    			case evt_SleepCont:
+    				sleep_mode = true;
+    				//
+    				HAL_SuspendTick();
+    				HAL_PWR_EnableSleepOnExit();
+    				HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+    				HAL_ResumeTick();
+    			break;
     			case evt_Sleep:
     				Report(1, "Going into SLEEP MODE...\r\n");// in 1 second\r\n");
 #ifdef SET_BLE
@@ -679,14 +689,10 @@ int main(void)
 #ifdef SET_DISPLAY
     				ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
 #endif
-    				HAL_Delay(500);
+    				HAL_Delay(250);
     				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
-    				sleep_mode = true;
-    				//
-    				HAL_SuspendTick();
-    				HAL_PWR_EnableSleepOnExit();
-    				HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
-    				HAL_ResumeTick();
+
+    				putEvt(evt_SleepCont);
     			break;
     			case evt_ExitSleep:
     				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
