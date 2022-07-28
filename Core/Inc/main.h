@@ -226,6 +226,8 @@ void Report(const uint8_t addTime, const char *fmt, ...);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define DISPLAY_ON_Pin GPIO_PIN_0
+#define DISPLAY_ON_GPIO_Port GPIOC
 #define KEY0_Pin GPIO_PIN_1
 #define KEY0_GPIO_Port GPIOC
 #define KEY0_EXTI_IRQn EXTI1_IRQn
@@ -303,13 +305,18 @@ typedef struct s_recq_t {
 #pragma pack(pop)
 
 #define BLE_WAKEUP_DOWN() BLE_WAKEUP_GPIO_Port->BSRR = (BLE_WAKEUP_Pin << 16)
-#define BLE_WAKEUP_UP() BLE_WAKEUP_GPIO_Port->BSRR = BLE_WAKEUP_Pin;
+#define BLE_WAKEUP_UP() BLE_WAKEUP_GPIO_Port->BSRR = BLE_WAKEUP_Pin
 
 #endif
 
 
 #ifdef SET_SLEEP
 	#define WAIT_BEFORE_SLEEP 30
+#endif
+
+#ifdef SET_DISPLAY
+	#define ON_DISPLAY() DISPLAY_ON_GPIO_Port->BSRR = (DISPLAY_ON_Pin << 16)
+	#define OFF_DISPLAY() DISPLAY_ON_GPIO_Port->BSRR = DISPLAY_ON_Pin
 #endif
 
 /* USER CODE END Private defines */

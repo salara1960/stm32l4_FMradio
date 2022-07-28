@@ -87,7 +87,8 @@ DMA_HandleTypeDef hdma_usart3_tx;
 //const char *ver = "1.4.2 25.07.22";// without FatFs release
 //const char *ver = "1.5 26.07.22";// add bluetooth device 'JDY-25M'
 //const char *ver = "1.5.1 26.07.22";// add sleep/wakeup features for BLE device
-const char *ver = "1.5.2 27.07.22";// add sleep/wakeup features for CPU+BLE
+//const char *ver = "1.5.2 27.07.22";// add sleep/wakeup features for CPU+BLE
+const char *ver = "1.5.3 28.07.22";// add ON/OFF dislay pin
 
 
 
@@ -113,7 +114,8 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
+static uint32_t epoch = 1659001909;
+//1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
 //1657971799;1657915595;1657635512;1657313424;//1657283440;//1657234028;//1657200272;//1657194633;//1657144926;
@@ -1070,7 +1072,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x00702D95;
+  hi2c1.Init.Timing = 0x10909EEE;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -1417,7 +1419,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(ERR_LED_GPIO_Port, ERR_LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, DISPLAY_ON_Pin|ERR_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(TIK_LED_GPIO_Port, TIK_LED_Pin, GPIO_PIN_RESET);
@@ -1433,6 +1435,13 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(SPI1_RST_GPIO_Port, SPI1_RST_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin : DISPLAY_ON_Pin */
+  GPIO_InitStruct.Pin = DISPLAY_ON_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(DISPLAY_ON_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : KEY0_Pin KEY1_Pin */
   GPIO_InitStruct.Pin = KEY0_Pin|KEY1_Pin;
