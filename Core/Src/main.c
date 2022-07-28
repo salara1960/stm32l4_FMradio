@@ -92,6 +92,7 @@ const char *ver = "1.5.3 28.07.22";// add ON/OFF dislay pin
 
 
 
+
 char stx[MAX_UART_BUF] = {0};
 char tmp[128] = {0};
 char cmdBuf[MAX_UART_BUF] = {0};
@@ -114,7 +115,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1659001909;
+static uint32_t epoch = 1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
@@ -144,7 +145,7 @@ const char *s_cmds[MAX_CMDS] = {
 	"band:",
 	"cfg",
 	"wakeup",
-	"fromsleep",
+	"exitsleep",
 	"sleep"
 };
 const char *str_cmds[MAX_CMDS] = {
@@ -168,7 +169,7 @@ const char *str_cmds[MAX_CMDS] = {
 	"Band",
 	"cfgStations",
 	"BleWakeUp",
-	"FromSleep",
+	"ExitSleep",
 	"Sleep"
 };
 
@@ -279,7 +280,7 @@ uint8_t spiRdy = 1;
 	char txbBuf[MAX_BLE_BUF] = {0};
 	char bleBuf[MAX_BLE_BUF] = {0};
 	char bleRxBuf[MAX_BLE_BUF] = {0};
-	uint8_t ble_withDMA = 0;
+	uint8_t ble_withDMA = 1;
 	volatile uint8_t bleReady = 1;
 	uint8_t ble_stat = 0;
 	uint8_t adone = 0;
@@ -288,12 +289,12 @@ uint8_t spiRdy = 1;
 	s_recq_t bleQueCmd;
 	bool bleQueAckFlag = false;
 	bool bleQueCmdFlag = false;
+	const char *ble_statName[] = {"Disconnected", "Connected"};
 #endif
 
 #ifdef SET_SLEEP
-	//uint32_t start_sleep = 0;
 	bool sleep_mode = false;
-	uint32_t tms = 0;
+	//uint32_t tms = 0;
 #endif
 
 
@@ -345,12 +346,15 @@ void showCfg()
 }
 //-------------------------------------------------------------------------------------------
 
+
+//-------------------------------------------------------------------------------------------
+
 #ifdef SET_BLE
 //-------------------------------------------------------------------------------------------
 void bleWakeUp()
 {
 	BLE_WAKEUP_DOWN();
-	HAL_Delay(100);
+	HAL_Delay(50);
 	BLE_WAKEUP_UP();
 }
 //-------------------------------------------------------------------------------------------
@@ -628,21 +632,16 @@ int main(void)
 #endif
 
 #ifdef SET_BLE
+    bleWakeUp();
+
     bleQueAckFlag   = initRECQ(&bleQueAck);
     bleQueCmdFlag   = initRECQ(&bleQueCmd);
 
-    bleWakeUp();
-
     bleWrite("AT+RESET\r\n", 1);
     ble_stat = get_bleStat();
-    Report(1, "[BLE] stat = %u\r\n", ble_stat);
+    Report(1, "[BLE] stat(%u) '%s'\r\n", ble_stat, ble_statName[ble_stat & 1]);
 #endif
 
-
-#ifdef SET_SLEEP
-    //start_sleep = 0;//get_tmr(WAIT_BEFORE_SLEEP);
-    sleep_mode = false;
-#endif
 
     uint16_t lastErr = devOK;
 
@@ -655,31 +654,7 @@ int main(void)
 
 
     while (!restart) {
-/*
-#ifdef SET_SLEEP
-    	if (start_sleep ) {
-    		if (check_tmr(start_sleep)) {
-    			start_sleep = 0;
-    			Report(1, "Going into SLEEP MODE in 1 second\r\n");
-	#ifdef SET_BLE
-    			bleWrite("AT+SLEEP1\r\n", 1);
-	#endif
-	#ifdef SET_DISPLAY
-    			ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
-	#endif
-    			HAL_Delay(1000);
-    			//
-    			HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
-    			sleep_mode = true;
-    			HAL_SuspendTick();
-    			HAL_PWR_EnableSleepOnExit();
-    			//	  Enter Sleep Mode , wake up is done once User push-button is pressed
-    			HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
-    			HAL_ResumeTick();
-    		}
-    	}
-#endif
-*/
+
 
 #ifdef SET_FIFO_MODE
     	evt = getEvt();
@@ -697,7 +672,7 @@ int main(void)
     		}
     		switch (evt) {
     			case evt_Sleep:
-    				//Report(1, "Going into SLEEP MODE...\r\n");// in 1 second\r\n");
+    				Report(1, "Going into SLEEP MODE...\r\n");// in 1 second\r\n");
 #ifdef SET_BLE
     				bleWrite("AT+SLEEP1\r\n", 1);
 #endif
@@ -705,7 +680,6 @@ int main(void)
     				ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
 #endif
     				HAL_Delay(500);
-    				//
     				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
     				sleep_mode = true;
     				//
@@ -713,18 +687,16 @@ int main(void)
     				HAL_PWR_EnableSleepOnExit();
     				HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
     				HAL_ResumeTick();
-    				//
     			break;
     			case evt_ExitSleep:
-    				//Report(1, "Exit from SLEEP MODE\r\n");
     				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
 #ifdef SET_DISPLAY
     				ST7565_CMD_DISPLAY(CMD_DISPLAY_ON);
 #endif
 #ifdef SET_BLE
-    				putEvt(evt_WakeUp);
+    				bleWakeUp();//putEvt(evt_WakeUp);
 #endif
-    				//if (!start_sleep) start_sleep = get_tmr(WAIT_BEFORE_SLEEP);
+    				Report(1, "Exit from SLEEP MODE\r\n");
     			break;
     			case evt_WakeUp:
 #ifdef SET_BLE
@@ -1009,10 +981,10 @@ int main(void)
 
     HAL_TIM_Base_Stop_IT(tikPort);
 
-#ifdef SET_DISPLAY
+/*#ifdef SET_DISPLAY
     ST7565_Reset();
     ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
-#endif
+#endif*/
 
 
     Report(1, "[que:%u] Stop application...\r\n", cntEvt);
@@ -1921,6 +1893,19 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim->Instance == TIM4) {
 		msCounter++;//inc_msCounter();
+		/*
+#ifdef SET_SLEEP
+		if (sleep_mode) {
+			if (!(msCounter % _200ms)) {
+				if (HAL_GPIO_ReadPin(CPU_WAKEUP_GPIO_Port, CPU_WAKEUP_Pin) == GPIO_PIN_SET) {
+					sleep_mode = false;
+					HAL_PWR_DisableSleepOnExit();
+					putEvt(cmdExitSleep);
+				}
+			}
+		}
+#endif
+		*/
 		if (!(msCounter % _1s)) {// 1 seconda
 			secCounter++;
 		  	HAL_GPIO_TogglePin(TIK_LED_GPIO_Port, TIK_LED_Pin);
@@ -1928,20 +1913,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		  	if (startSec) putEvt(evt_Sec);
 #endif
 	  	}
-#ifdef SET_SLEEP
-		if (sleep_mode) {
-			if (HAL_GPIO_ReadPin(CPU_WAKEUP_GPIO_Port, CPU_WAKEUP_Pin) == GPIO_PIN_SET) {
-				/*if (!tms) tms = HAL_GetTick();
-				else
-				if ((HAL_GetTick() - tms) > 500) {*/
-					sleep_mode = false;
-					//tms = 0;
-					HAL_PWR_DisableSleepOnExit();
-					putEvt(cmdExitSleep);
-				/*}*/
-			}
-		}
-#endif
 	}
 }
 //--------------------------------------------------------------------------------------------
@@ -2258,6 +2229,16 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 //--------------------------------------------------------------------------------------------
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+#ifdef SET_SLEEP
+	if (sleep_mode) {
+		if (HAL_GPIO_ReadPin(CPU_WAKEUP_GPIO_Port, CPU_WAKEUP_Pin) == GPIO_PIN_SET) {
+			sleep_mode = false;
+			HAL_PWR_DisableSleepOnExit();
+			putEvt(cmdExitSleep);
+		}
+		return;
+	}
+#endif
 	if ((GPIO_Pin == KEY0_Pin) || (GPIO_Pin == KEY1_Pin)) {
 		if (GPIO_Pin == KEY0_Pin) seek_up = 1;
 		else
