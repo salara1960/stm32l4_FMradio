@@ -90,7 +90,8 @@ DMA_HandleTypeDef hdma_usart3_tx;
 //const char *ver = "1.5.1 26.07.22";// add sleep/wakeup features for BLE device
 //const char *ver = "1.5.2 27.07.22";// add sleep/wakeup features for CPU+BLE
 //const char *ver = "1.5.3 28.07.22";// add ON/OFF dislay pin
-const char *ver = "1.6 29.07.22";// add Infrared control
+//const char *ver = "1.6 29.07.22";// add Infrared control
+const char *ver = "1.6.1 29.07.22";// add read RDS (first step)
 
 
 
@@ -117,7 +118,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
+static uint32_t epoch = 1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
@@ -149,7 +150,8 @@ const char *s_cmds[MAX_CMDS] = {
 	"wakeup",
 	"exitsleep",
 	"sleep",
-	"sleepcont"
+	"sleepcont",
+	"rds"
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -174,7 +176,8 @@ const char *str_cmds[MAX_CMDS] = {
 	"BleWakeUp",
 	"ExitSleep",
 	"Sleep",
-	"SleepCont"
+	"SleepCont",
+	"readRDS"
 };
 
 #ifdef SET_FIFO_MODE
@@ -231,6 +234,9 @@ uint8_t spiRdy = 1;
 	uint8_t newBassBoost = 0;
 	bool stereo = false;
 	uint8_t noMute = 1;
+	uint8_t dataRDS[8] = {0};
+	bool syncRds = false;
+	bool readyRds = false;
 	//
 	const char *noneStation = "???";
 	static const rec_t def_list[MAX_LIST] = {
@@ -754,7 +760,7 @@ int main(void)
 							putEvt(evt_List);
 						break;
 						case key_eq:// enable/disable print via uart
-							putEvt(evt_Sleep);
+							putEvt(evt_Mute);//evt_Sleep);
 						break;
 						case key_sp:
 							if (!ep_start) {
@@ -853,6 +859,14 @@ int main(void)
 #endif
     		}
     		switch (evt) {
+    			case evt_Rds:
+    				memset(dataRDS, 0, sizeof(dataRDS));
+    				readyRds = rda5807_Get_RDSData(dataRDS, &syncRds);
+    				sprintf(tmp, "[RDS] ready=%d sync=%d :", readyRds, syncRds);
+    				for (int8_t i = 0; i < sizeof(dataRDS); i++)
+    					sprintf(tmp+strlen(tmp), " %02X", dataRDS[i]);
+    				Report(1, "%s\r\n", tmp);
+    			break;
     			case evt_SleepCont:
     				sleep_mode = true;
     				//
@@ -1248,7 +1262,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x10909EEE;
+  hi2c1.Init.Timing = 0x00702D95;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -1700,7 +1714,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : IRED_Pin */
   GPIO_InitStruct.Pin = IRED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(IRED_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : GREEN_LED_Pin */
@@ -2350,6 +2364,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 								case cmdRestart://"restart" -> restart = 1;
 								case cmdWakeUp://"wakeup"
 								case cmdSleep://"sleep" -> goto sleep mode
+								case cmdRds://"rds"
 									ev = i;
 								break;
 								case cmdEpoch://"epoch:1657191323"

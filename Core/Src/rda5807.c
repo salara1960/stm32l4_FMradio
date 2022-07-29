@@ -467,14 +467,14 @@ void rda5807_StartSeek(uint8_t Up)
 //tReg02h Reg02;
 
     // Читаем регистр 0x02
-    rda5807_read(0x02, (uint16_t *)&Buffs.Reg02, 1);
+    rda5807_read(2, (uint16_t *)&Buffs.Reg02, 1);
 
     Buffs.Reg02.bSKMODE = 1;          // 07 Seek Mode (0 = wrap at the upper or lower band limit and continue seeking; 1 = stop seeking at the upper or lower band limit)
     Buffs.Reg02.bSEEK = 1;            // 08 Seek (0 = Disable stop seek; 1 = Enable)
     Buffs.Reg02.bSEEKUP = Up ? 1 : 0; // 09 Seek Up (0 = Seek down; 1 = Seek up)
 
     // Пишем регистр 0x02
-    rda5807_write(0x02, (uint16_t *)&Buffs.Reg02, 1);
+    rda5807_write(2, (uint16_t *)&Buffs.Reg02, 1);
 }
 //==============================================================================
 
@@ -560,6 +560,29 @@ void rda5807_Set_Mute(uint8_t mute)
 	rda5807_write(2, (uint16_t *)&Buffs.Reg02, 1);
 }
 //==============================================================================
+/*
+bool rda5807_Get_RDSReady(bool *sync)
+{
+	rda5807_read(0x0A, (uint16_t *)&Buffs.Reg0A, 1);
+
+	*sync = Buffs.Reg0A.bRDSS;
+
+	return Buffs.Reg0A.bRDSR;
+}
+*/
+//==============================================================================
+bool rda5807_Get_RDSData(uint8_t *data, bool *sync)
+{
+	rda5807_read(0x0A, (uint16_t *)&Buffs.Reg0A, 1);
+
+	*sync = Buffs.Reg0A.bRDSS;
+
+	if (Buffs.Reg0A.bRDSR) rda5807_read(0x0C, (uint16_t *)data, 4);
+
+	return Buffs.Reg0A.bRDSR;
+}
+//==============================================================================
+
 
 //bREADCHAN
 

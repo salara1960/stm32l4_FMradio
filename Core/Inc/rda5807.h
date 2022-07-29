@@ -231,6 +231,9 @@ bool rda5807_Get_StereoMonoFlag();
 uint16_t rda5807_Get_Channel();
 uint8_t rda5807_Set_Band(uint8_t band);
 void rda5807_Set_Mute(uint8_t mute);
+//bool rda5807_Get_RDSReady(bool *sync);
+bool rda5807_Get_RDSData(uint8_t *data, bool *sync);
+
 
 #endif
 

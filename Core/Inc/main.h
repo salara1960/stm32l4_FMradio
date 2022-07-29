@@ -92,7 +92,8 @@ enum {
 	cmdWakeUp,
 	cmdExitSleep,
 	cmdSleep,
-	cmdSleepCont
+	cmdSleepCont,
+	cmdRds
 };
 
 enum {
@@ -119,7 +120,8 @@ enum {
 	evt_WakeUp,
 	evt_ExitSleep,
 	evt_Sleep,
-	evt_SleepCont
+	evt_SleepCont,
+	evt_Rds
 };
 
 
@@ -199,7 +201,7 @@ enum {
 #ifdef SET_BLE
 	#define MAX_BLE_BUF  256
 #endif
-#define MAX_CMDS          23
+#define MAX_CMDS          24
 #define MAX_LIST          25
 #define MAX_BAND           4
 #define MAX_STEP           4
