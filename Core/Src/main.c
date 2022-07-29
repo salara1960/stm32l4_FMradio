@@ -56,6 +56,7 @@ DMA_HandleTypeDef hdma_spi2_rx;
 DMA_HandleTypeDef hdma_spi2_tx;
 
 TIM_HandleTypeDef htim4;
+TIM_HandleTypeDef htim6;
 
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
@@ -88,7 +89,8 @@ DMA_HandleTypeDef hdma_usart3_tx;
 //const char *ver = "1.5 26.07.22";// add bluetooth device 'JDY-25M'
 //const char *ver = "1.5.1 26.07.22";// add sleep/wakeup features for BLE device
 //const char *ver = "1.5.2 27.07.22";// add sleep/wakeup features for CPU+BLE
-const char *ver = "1.5.3 28.07.22";// add ON/OFF dislay pin
+//const char *ver = "1.5.3 28.07.22";// add ON/OFF dislay pin
+const char *ver = "1.6 29.07.22";// add Infrared control
 
 
 
@@ -115,7 +117,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1659040054;//1659015162;//1659001909;
+static uint32_t epoch = 1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
@@ -211,7 +213,7 @@ uint8_t spiRdy = 1;
 #endif
 
 #ifdef SET_RDA_CHIP
-	float Freq = 76;//94.0;//96.3;//95.1;
+	float Freq = 94.0;//96.3;//95.1;
 	float newFreq = 95.1;
 	float lBand = 0.0;
 	float rBand = 0.0;
@@ -299,6 +301,36 @@ uint8_t spiRdy = 1;
 	//uint32_t tms = 0;
 #endif
 
+#ifdef SET_IRED
+
+	const one_key_t keyAll[MAX_IRED_KEY] = {
+			{"irCH-",   0x2C090B43},//e318261b},
+			{"irCH",    0x494202E3},//00511dbb},
+			{"irCH+",   0x377952A7},//ee886d7f},
+			{"irLEFT",  0x9B94B947},//52a3d41f},
+			{"irRIGHT", 0x20D93043},//d7e84b1b},
+			{"irSP",    0x69EF32E3},//20fe4dbb},
+			{"ir-",     0x3967A663},//f076c13b},
+			{"ir+",     0xECB9D303},//a3c8eddb},
+			{"irEQ",    0x2EC0A2A7},//e5cfbd7f},
+			{"ir100+",  0xE0392123},//97483bfb},
+			{"ir200+",  0x39B4FB6B},//f0c41643},
+			{"ir0",     0x09F2CAA3},//c101e57b},
+			{"ir1",     0xE007A367},//9716be3f},
+			{"ir2",     0x868BC91F},//3d9ae3f7},
+			{"ir3",     0xAA72E743},//6182021b},
+			{"ir4",     0xD5134AA3},//8c22657b},
+			{"ir5",     0x918021E3},//488f3cbb},
+			{"ir6",     0x4D3ACCC7},//0449e79f},
+			{"ir7",     0x7BB7E31F},//32c6fdf7},
+			{"ir8",     0x64B0FAA3},//1bc0157b},
+			{"ir9",     0x87B4E143}//3ec3fc1b}
+	};
+
+	TIM_HandleTypeDef *portIRED = &htim6; // таймер для приёма
+	char stline[40] = {0};
+#endif
+
 
 /* USER CODE END PV */
 
@@ -313,6 +345,7 @@ static void MX_SPI2_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 
 #ifdef SET_FIFO_MODE
@@ -504,6 +537,7 @@ int main(void)
   MX_SPI1_Init();
   MX_I2C1_Init();
   MX_USART3_UART_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
 
 
@@ -645,6 +679,16 @@ int main(void)
 #endif
 
 
+#ifdef SET_IRED
+    bool ep_start = false;
+    char ep_str[16] = {0};
+    uint32_t ep_tmr = 0;
+	uint32_t tmr_ired = 0;
+	//uint32_t clr_tmr = 0;
+	enIntIRED();
+#endif
+
+
     uint16_t lastErr = devOK;
 
     putEvt(evt_Freq);
@@ -657,6 +701,142 @@ int main(void)
 
     while (!restart) {
 
+/**/
+#ifdef SET_IRED
+  		if (!tmr_ired) {
+			if (decodeIRED(&results)) {
+
+				tmr_ired = get_mstmr(_300ms);
+				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
+				int8_t kid = -1;
+				for (int8_t i = 0; i < MAX_IRED_KEY; i++) {
+					if (results.value == keyAll[i].code) {
+						kid = i;
+						break;
+					}
+				}
+				//
+				if (kid == -1) sprintf(stline, "CODE:%08lX", results.value);
+						  else sprintf(stline, "irKEY: %s", keyAll[kid].name);
+				Report(1, "[que:%u] %s\r\n", cntEvt, stline);
+				//
+				if (kid != -1) {
+					switch (kid) {
+						case key_ch:
+							putEvt(evt_Restart);
+						break;
+						case key_ch_plus:
+							seek_up = 1;
+							putEvt(evt_Scan);
+						break;
+						case key_ch_minus:
+							seek_up = 0;
+							putEvt(evt_Scan);
+						break;
+						case key_minus:
+							if (Volume) {
+								newVolume = Volume - 1;
+								putEvt(evt_Vol);
+							}
+						break;
+						case key_plus:
+							if (Volume < 15) {
+								newVolume = Volume + 1;
+								putEvt(evt_Vol);
+							}
+						break;
+						case key_left:
+							seek_up = 0;
+							putEvt(evt_List);
+						break;
+						case key_right:
+							seek_up = 1;
+							putEvt(evt_List);
+						break;
+						case key_eq:// enable/disable print via uart
+							putEvt(evt_Sleep);
+						break;
+						case key_sp:
+							if (!ep_start) {
+								ep_start = true;
+								memset(ep_str, 0, sizeof(ep_str));
+								ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - Font_6x8.FontHeight, SCREEN_WIDTH - 1, Font_6x8.FontHeight, PIX_OFF);
+								sprintf(tmp, "Time:");
+								ST7565_Print(0, SCREEN_HEIGHT - Font_6x8.FontHeight, tmp, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
+								ST7565_Update();
+								ep_tmr = get_tmr(20);
+							} else {
+								ep_start = false;
+								ep_tmr = 0;
+								epoch = atoi(ep_str);
+								putEvt(evt_Epoch);
+							}
+						break;
+						case key_100://bandUp();
+							if (Band < MAX_BAND) {
+								newBand = Band + 1;
+								putEvt(evt_Band);
+							}
+						break;
+						case key_200://bandDown();
+							if (Band) {
+								newBand = Band - 1;
+								putEvt(evt_Band);
+							}
+						break;
+						case key_0:
+						case key_1:
+						case key_2:
+						case key_3:
+						case key_4:
+						case key_5:
+						case key_6:
+						case key_7:
+						case key_8:
+						case key_9:
+							if (ep_start) {
+								if (strlen(ep_str) < 10) {
+									char ch = (kid - key_0) + 0x30;
+									sprintf(ep_str+strlen(ep_str), "%c", ch);
+									ST7565_Print(32, SCREEN_HEIGHT - Font_6x8.FontHeight, ep_str, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
+									ST7565_Update();
+									ep_tmr = get_tmr(20);
+								}
+							}
+						break;
+					}//switch (kid)
+				}//if (kid != -1)
+				//if (!ep_start) {
+				//	//spi_ssd1306_text_xy(mkLineCenter(stline, FONT_WIDTH), 1, 7, false);
+				//	clr_tmr = get_tmr(5);
+				//}
+			}//if (decodeIRED(&results))
+		}
+  		//if (clr_tmr) {
+  		//	if (check_tmr(clr_tmr)) {
+  		//		clr_tmr = 0;
+  		//		//spi_ssd1306_clear_line(7, false);
+  		//	}
+  		//}
+  		if (ep_tmr) {
+  			if (check_tmr(ep_tmr)) {
+  				ep_tmr = 0;
+  				ep_start = false;
+#ifdef SET_OLED_SPI
+  				spi_ssd1306_clear_line(8, false);
+#endif
+
+  			}
+  		}
+		if (tmr_ired) {
+			if (check_mstmr(tmr_ired)) {
+				tmr_ired = 0;
+				resumeIRED();
+				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
+			}
+		}
+#endif
+/**/
 
 #ifdef SET_FIFO_MODE
     	evt = getEvt();
@@ -1294,6 +1474,44 @@ static void MX_TIM4_Init(void)
 }
 
 /**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 399;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 4;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -1479,6 +1697,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(SPI2_CS_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : IRED_Pin */
+  GPIO_InitStruct.Pin = IRED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(IRED_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : GREEN_LED_Pin */
   GPIO_InitStruct.Pin = GREEN_LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -1572,6 +1796,8 @@ void putEvt(int evt)
 
 	HAL_NVIC_DisableIRQ(USART2_IRQn);
 	HAL_NVIC_DisableIRQ(TIM4_IRQn);
+	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
+	HAL_NVIC_DisableIRQ(EXTI2_IRQn);
 
 	if (cnt_evt >= MAX_FIFO_SIZE) {
 			wr_evt_err++;
@@ -1590,6 +1816,8 @@ void putEvt(int evt)
 		if (wr_evt_err) devError |= devFIFO;
 				   else devError &= ~devFIFO;
 
+		HAL_NVIC_EnableIRQ(EXTI2_IRQn);
+		HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 		HAL_NVIC_EnableIRQ(TIM4_IRQn);
 		HAL_NVIC_EnableIRQ(USART2_IRQn);
 
@@ -1605,6 +1833,9 @@ int ret = evt_None;
 
 	HAL_NVIC_DisableIRQ(USART2_IRQn);
 	HAL_NVIC_DisableIRQ(TIM4_IRQn);
+	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
+	HAL_NVIC_DisableIRQ(EXTI2_IRQn);
+
 	if (cnt_evt) {
 		ret = evt_fifo[rd_evt_adr];
 		if (cnt_evt) cnt_evt--;
@@ -1615,6 +1846,8 @@ int ret = evt_None;
 		}
 	}
 
+	HAL_NVIC_EnableIRQ(EXTI2_IRQn);
+	HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 	HAL_NVIC_EnableIRQ(TIM4_IRQn);
 	HAL_NVIC_EnableIRQ(USART2_IRQn);
 
@@ -1899,19 +2132,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim->Instance == TIM4) {
 		msCounter++;//inc_msCounter();
-		/*
-#ifdef SET_SLEEP
-		if (sleep_mode) {
-			if (!(msCounter % _200ms)) {
-				if (HAL_GPIO_ReadPin(CPU_WAKEUP_GPIO_Port, CPU_WAKEUP_Pin) == GPIO_PIN_SET) {
-					sleep_mode = false;
-					HAL_PWR_DisableSleepOnExit();
-					putEvt(cmdExitSleep);
-				}
-			}
-		}
-#endif
-		*/
 		if (!(msCounter % _1s)) {// 1 seconda
 			secCounter++;
 		  	HAL_GPIO_TogglePin(TIK_LED_GPIO_Port, TIK_LED_Pin);
@@ -1920,6 +2140,55 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 #endif
 	  	}
 	}
+#ifdef SET_IRED
+	else
+	if (htim->Instance == TIM6) {
+		uint8_t irdata = RECIV_PIN; // пин для приёма
+		irparams.timer++;  // One more 50uS tick
+		if (irparams.rawlen >= RAWBUF) irparams.rcvstate = STATE_OVERFLOW;  // Buffer overflow
+
+		switch (irparams.rcvstate) {
+			case STATE_IDLE: // In the middle of a gap
+				if (irdata == MARK) {
+					if (irparams.timer < GAP_TICKS) { // Not big enough to be a gap.
+						irparams.timer = 0;
+					} else {
+						// Gap just ended; Record duration; Start recording transmission
+						irparams.overflow = 0;
+						irparams.rawlen  = 0;
+						irparams.rawbuf[irparams.rawlen++] = irparams.timer;
+						irparams.timer = 0;
+						irparams.rcvstate = STATE_MARK;
+					}
+				}
+			break;
+			case STATE_MARK:  // Timing Mark
+				if (irdata == SPACE) {// Mark ended; Record time
+					irparams.rawbuf[irparams.rawlen++] = irparams.timer;
+					irparams.timer = 0;
+					irparams.rcvstate = STATE_SPACE;
+				}
+			break;
+			case STATE_SPACE:  // Timing Space
+				if (irdata == MARK) {// Space just ended; Record time
+					irparams.rawbuf[irparams.rawlen++] = irparams.timer;
+					irparams.timer = 0;
+					irparams.rcvstate = STATE_MARK;
+				} else if (irparams.timer > GAP_TICKS) {// Space
+					irparams.rcvstate = STATE_STOP;
+				}
+			break;
+			case STATE_STOP:  // Waiting; Measuring Gap
+			 	if (irdata == MARK) irparams.timer = 0;  // Reset gap timer
+			break;
+			case STATE_OVERFLOW:  // Flag up a read overflow; Stop the State Machine
+				irparams.overflow = 1;
+				irparams.rcvstate = STATE_STOP;
+			break;
+		}
+		//
+	}
+#endif
 }
 //--------------------------------------------------------------------------------------------
 

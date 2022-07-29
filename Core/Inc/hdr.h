@@ -17,6 +17,7 @@
 #define SET_BLE
 #define SET_QUEUE
 #define SET_SLEEP
+#define SET_IRED
 
 
 #endif /* INC_HDR_H_ */

@@ -133,7 +133,9 @@ enum {
 #ifdef SET_RDA_CHIP
 	#include "rda5807.h"
 #endif
-
+#ifdef SET_IRED
+	#include "IRremote.h"
+#endif
 
 /* USER CODE END ET */
 
@@ -252,6 +254,8 @@ void Report(const uint8_t addTime, const char *fmt, ...);
 #define SPI1_CS_GPIO_Port GPIOA
 #define SPI2_CS_Pin GPIO_PIN_12
 #define SPI2_CS_GPIO_Port GPIOB
+#define IRED_Pin GPIO_PIN_11
+#define IRED_GPIO_Port GPIOC
 #define GREEN_LED_Pin GPIO_PIN_12
 #define GREEN_LED_GPIO_Port GPIOC
 #define SPI1_RST_Pin GPIO_PIN_2
@@ -322,6 +326,45 @@ typedef struct s_recq_t {
 	#define ON_DISPLAY() DISPLAY_ON_GPIO_Port->BSRR = (DISPLAY_ON_Pin << 16)
 	#define OFF_DISPLAY() DISPLAY_ON_GPIO_Port->BSRR = DISPLAY_ON_Pin
 #endif
+
+
+#ifdef SET_IRED
+
+	#define MAX_IRED_KEY 21
+
+	enum {
+		key_ch_minus = 0,
+		key_ch,
+		key_ch_plus,
+		key_left,
+		key_right,
+		key_sp,
+		key_minus,
+		key_plus,
+		key_eq,
+		key_100,
+		key_200,
+		key_0,
+		key_1,
+		key_2,
+		key_3,
+		key_4,
+		key_5,
+		key_6,
+		key_7,
+		key_8,
+		key_9
+	};
+
+	typedef struct {
+		char name[8];
+		uint32_t code;
+	} one_key_t;
+
+	extern TIM_HandleTypeDef *portIRED;//htim3; // таймер для приёма
+
+#endif
+
 
 /* USER CODE END Private defines */
 

@@ -5,6 +5,7 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
+../Core/Src/IRremote.c \
 ../Core/Src/ST7565.c \
 ../Core/Src/fonts.c \
 ../Core/Src/main.c \
@@ -17,6 +18,7 @@ C_SRCS += \
 ../Core/Src/w25.c 
 
 OBJS += \
+./Core/Src/IRremote.o \
 ./Core/Src/ST7565.o \
 ./Core/Src/fonts.o \
 ./Core/Src/main.o \
@@ -29,6 +31,7 @@ OBJS += \
 ./Core/Src/w25.o 
 
 C_DEPS += \
+./Core/Src/IRremote.d \
 ./Core/Src/ST7565.d \
 ./Core/Src/fonts.d \
 ./Core/Src/main.d \
@@ -48,7 +51,7 @@ Core/Src/%.o Core/Src/%.su: ../Core/Src/%.c Core/Src/subdir.mk
 clean: clean-Core-2f-Src
 
 clean-Core-2f-Src:
-	-$(RM) ./Core/Src/ST7565.d ./Core/Src/ST7565.o ./Core/Src/ST7565.su ./Core/Src/fonts.d ./Core/Src/fonts.o ./Core/Src/fonts.su ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/rda5807.d ./Core/Src/rda5807.o ./Core/Src/rda5807.su ./Core/Src/stm32l4xx_hal_msp.d ./Core/Src/stm32l4xx_hal_msp.o ./Core/Src/stm32l4xx_hal_msp.su ./Core/Src/stm32l4xx_it.d ./Core/Src/stm32l4xx_it.o ./Core/Src/stm32l4xx_it.su ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_stm32l4xx.d ./Core/Src/system_stm32l4xx.o ./Core/Src/system_stm32l4xx.su ./Core/Src/w25.d ./Core/Src/w25.o ./Core/Src/w25.su
+	-$(RM) ./Core/Src/IRremote.d ./Core/Src/IRremote.o ./Core/Src/IRremote.su ./Core/Src/ST7565.d ./Core/Src/ST7565.o ./Core/Src/ST7565.su ./Core/Src/fonts.d ./Core/Src/fonts.o ./Core/Src/fonts.su ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/rda5807.d ./Core/Src/rda5807.o ./Core/Src/rda5807.su ./Core/Src/stm32l4xx_hal_msp.d ./Core/Src/stm32l4xx_hal_msp.o ./Core/Src/stm32l4xx_hal_msp.su ./Core/Src/stm32l4xx_it.d ./Core/Src/stm32l4xx_it.o ./Core/Src/stm32l4xx_it.su ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_stm32l4xx.d ./Core/Src/system_stm32l4xx.o ./Core/Src/system_stm32l4xx.su ./Core/Src/w25.d ./Core/Src/w25.o ./Core/Src/w25.su
 
 .PHONY: clean-Core-2f-Src
 

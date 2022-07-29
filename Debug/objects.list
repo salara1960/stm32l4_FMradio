@@ -1,3 +1,4 @@
+"./Core/Src/IRremote.o"
 "./Core/Src/ST7565.o"
 "./Core/Src/fonts.o"
 "./Core/Src/main.o"
