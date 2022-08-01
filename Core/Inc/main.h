@@ -61,7 +61,7 @@ enum {
 	devLCD = 0x80,
 	devRDA = 0x100,
 	devFS = 0x200
-#ifdef SET_BLE
+#if defined(SET_BLE) || defined(SET_AUDIO)
 	,
 	devBLE = 0x400,
 	devQUE = 0x800
@@ -198,7 +198,7 @@ enum {
 
 
 #define MAX_UART_BUF    1024
-#ifdef SET_BLE
+#if defined(SET_BLE) || defined(SET_AUDIO)
 	#define MAX_BLE_BUF  256
 #endif
 #define MAX_CMDS          24
@@ -294,7 +294,7 @@ extern uint8_t spiRdy;
 #endif
 
 
-#ifdef SET_BLE
+#if defined(SET_BLE) || defined(SET_AUDIO)
 
 #define MAX_QREC 32
 
@@ -314,8 +314,10 @@ typedef struct s_recq_t {
 } s_recq_t;
 #pragma pack(pop)
 
-#define BLE_WAKEUP_DOWN() BLE_WAKEUP_GPIO_Port->BSRR = (BLE_WAKEUP_Pin << 16)
-#define BLE_WAKEUP_UP() BLE_WAKEUP_GPIO_Port->BSRR = BLE_WAKEUP_Pin
+	#ifdef SET_BLE
+		#define BLE_WAKEUP_DOWN() BLE_WAKEUP_GPIO_Port->BSRR = (BLE_WAKEUP_Pin << 16)
+		#define BLE_WAKEUP_UP() BLE_WAKEUP_GPIO_Port->BSRR = BLE_WAKEUP_Pin
+	#endif
 
 #endif
 

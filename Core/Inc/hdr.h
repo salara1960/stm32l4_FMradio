@@ -14,7 +14,8 @@
 #define SET_DISPLAY
 #define SET_RDA_CHIP
 //#define SET_FAT_FS
-#define SET_BLE
+//#define SET_BLE
+#define SET_AUDIO
 #define SET_QUEUE
 #define SET_SLEEP
 #define SET_IRED

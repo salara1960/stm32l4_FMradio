@@ -91,7 +91,8 @@ DMA_HandleTypeDef hdma_usart3_tx;
 //const char *ver = "1.5.2 27.07.22";// add sleep/wakeup features for CPU+BLE
 //const char *ver = "1.5.3 28.07.22";// add ON/OFF dislay pin
 //const char *ver = "1.6 29.07.22";// add Infrared control
-const char *ver = "1.6.1 29.07.22";// add read RDS (first step)
+//const char *ver = "1.6.1 29.07.22";// add read RDS (first step)
+const char *ver = "1.7 01.08.22";// remove BLE and add bluetooth_audio device
 
 
 
@@ -118,7 +119,8 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
+static uint32_t epoch = 1659390226;//1659381664;
+//1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
 //1658489899;//1658432922;//1658402955;//1658326638;//1658248185;//1658240652;//1658227367;//1657985710;
@@ -281,7 +283,7 @@ uint8_t spiRdy = 1;
 #endif
 
 
-#ifdef SET_BLE
+#if defined(SET_BLE) || defined(SET_AUDIO)
 	UART_HandleTypeDef *blePort = &huart3;
 	uint8_t bleRdy = 1;
 	uint8_t rxbByte = 0;
@@ -290,7 +292,7 @@ uint8_t spiRdy = 1;
 	char txbBuf[MAX_BLE_BUF] = {0};
 	char bleBuf[MAX_BLE_BUF] = {0};
 	char bleRxBuf[MAX_BLE_BUF] = {0};
-	uint8_t ble_withDMA = 1;
+	uint8_t ble_withDMA = 0;
 	volatile uint8_t bleReady = 1;
 	uint8_t ble_stat = 0;
 	uint8_t adone = 0;
@@ -404,6 +406,9 @@ uint8_t get_bleStat()
 	return HAL_GPIO_ReadPin(BLE_STAT_GPIO_Port, BLE_STAT_Pin);
 }
 //-------------------------------------------------------------------------------------------
+#endif
+
+#if defined(SET_BLE) || defined(SET_AUDIO)
 void bleWrite(const char *str, bool prn)
 {
 	if (sleep_mode) return;
@@ -557,7 +562,7 @@ int main(void)
     }
 
     if (HAL_UART_Receive_IT(cmdPort, &rxByte, 1) != HAL_OK) devError |= devUART;
-#ifdef SET_BLE
+#if defined(SET_BLE) || defined(SET_AUDIO)
     if (HAL_UART_Receive_IT(blePort, &rxbByte, 1) != HAL_OK) devError |= devBLE;
 #endif
 
@@ -673,15 +678,19 @@ int main(void)
 
 #endif
 
-#ifdef SET_BLE
-    bleWakeUp();
+#if defined(SET_BLE) || defined(SET_AUDIO)
+	#ifdef SET_BLE
+    	bleWakeUp();
+	#endif
 
     bleQueAckFlag   = initRECQ(&bleQueAck);
     bleQueCmdFlag   = initRECQ(&bleQueCmd);
 
-    bleWrite("AT+RESET\r\n", 1);
-    ble_stat = get_bleStat();
-    Report(1, "[BLE] stat(%u) '%s'\r\n", ble_stat, ble_statName[ble_stat & 1]);
+	#ifdef SET_BLE
+    	bleWrite("AT+RESET\r\n", 1);
+    	ble_stat = get_bleStat();
+    	Report(1, "[BLE] stat(%u) '%s'\r\n", ble_stat, ble_statName[ble_stat & 1]);
+	#endif
 #endif
 
 
@@ -850,13 +859,13 @@ int main(void)
     		cntEvt = getEvtCount();
     		if (evt != evt_Sec) {
     			Report(1, "[que:%u] get event '%s'\r\n", cntEvt, str_cmds[evt]);
-#ifdef SET_DISPLAY
+	#ifdef SET_DISPLAY
     			ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - Font_6x8.FontHeight, SCREEN_WIDTH - 1, Font_6x8.FontHeight, PIX_OFF);
     			dl = sprintf(tmp, "evt(%u) : %s", cntEvt, str_cmds[evt]);
     			x = ((SCREEN_WIDTH - (Font_6x8.FontWidth * dl)) >> 1) & 0x7f;
     			ST7565_Print(x, SCREEN_HEIGHT - Font_6x8.FontHeight, tmp, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
     			ST7565_Update();
-#endif
+	#endif
     		}
     		switch (evt) {
     			case evt_Rds:
@@ -877,12 +886,12 @@ int main(void)
     			break;
     			case evt_Sleep:
     				Report(1, "Going into SLEEP MODE...\r\n");// in 1 second\r\n");
-#ifdef SET_BLE
+	#ifdef SET_BLE
     				bleWrite("AT+SLEEP1\r\n", 1);
-#endif
-#ifdef SET_DISPLAY
+	#endif
+	#ifdef SET_DISPLAY
     				ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
-#endif
+	#endif
     				HAL_Delay(250);
     				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
 
@@ -890,18 +899,18 @@ int main(void)
     			break;
     			case evt_ExitSleep:
     				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
-#ifdef SET_DISPLAY
+	#ifdef SET_DISPLAY
     				ST7565_CMD_DISPLAY(CMD_DISPLAY_ON);
-#endif
-#ifdef SET_BLE
+	#endif
+	#ifdef SET_BLE
     				bleWakeUp();//putEvt(evt_WakeUp);
-#endif
+	#endif
     				Report(1, "Exit from SLEEP MODE\r\n");
     			break;
     			case evt_WakeUp:
-#ifdef SET_BLE
+	#ifdef SET_BLE
     				bleWakeUp();
-#endif
+	#endif
     			break;
     			case evt_Band:
     				Band = newBand;
@@ -1003,11 +1012,11 @@ int main(void)
     			break;
     			case evt_Sec:
     			{
-#ifdef SET_DISPLAY
+	#ifdef SET_DISPLAY
     				dl = sec2str(st);
     				x = ((SCREEN_WIDTH - (Font_6x8.FontWidth * dl)) >> 1) & 0x7f;
     				ST7565_Print(x, lin1, st, &Font_6x8, 0, PIX_OFF);
-#endif
+	#endif
     				//
     				if (scan) {
     					if (rda5807_Get_SeekTuneReadyFlag()) {
@@ -1025,7 +1034,7 @@ int main(void)
     				if (rssi != RSSI) {
     					RSSI = rssi;
     					stereo = rda5807_Get_StereoMonoFlag();
-#ifdef SET_DISPLAY
+	#ifdef SET_DISPLAY
     					if (stereo)
     						sprintf(st, "Rssi:%u Freq:%.1f S", RSSI, Freq);
     					else
@@ -1035,7 +1044,7 @@ int main(void)
     					//sprintf(sta, "'%s'", nameStation(Freq));
     					//showLine(sta, lin6, &lia, true);
     					////Report(1, "ChipID:0x%x Chan:%u Freq:%.2f RSSI:%u\r\n", rdaID, Chan, Freq, RSSI);
-#endif
+	#endif
     				}
     				//
     				if (devError) {
@@ -1047,7 +1056,7 @@ int main(void)
     						lastErr = devOK;
     					} else dl = 0;
     				}
-#ifdef SET_DISPLAY
+	#ifdef SET_DISPLAY
     				if (dl) {
     					ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - Font_6x8.FontHeight, SCREEN_WIDTH - 1, Font_6x8.FontHeight, PIX_OFF);
     					x = ((SCREEN_WIDTH - (Font_6x8.FontWidth * dl)) >> 1) & 0x7f;
@@ -1056,7 +1065,7 @@ int main(void)
     				}
     				//
     				ST7565_Update();
-#endif
+	#endif
     			}
     			break;
     			case evt_Clr:
@@ -1079,7 +1088,7 @@ int main(void)
     			case evt_Err:
     				Report(1, "[que:%u] Error input from uart\r\n", cntEvt);
     			break;
-#ifdef SET_W25FLASH
+	#ifdef SET_W25FLASH
     			case evt_sRead:
     			case evt_sNext:
     			{
@@ -1123,7 +1132,7 @@ int main(void)
     					Report(1, "Erase sector:%d done\r\n", adr_sector);
     				}
     			break;
-#endif
+	#endif
     		}
     		if ((evt >= evt_sRead) && (evt <= evt_sWrite)) {
     			last_cmd_sector =  evt;//cmd_sector;
@@ -1148,7 +1157,7 @@ int main(void)
 #endif
 
 
-#ifdef SET_BLE
+#if defined(SET_BLE) || defined(SET_AUDIO)
     	if (bleQueAckFlag) {
     		if (getRECQ(bleRxBuf, &bleQueAck) >= 0) {
     			Report(1, "[BLE] %s\r\n", bleRxBuf);
@@ -1576,7 +1585,7 @@ static void MX_USART3_UART_Init(void)
 
   /* USER CODE END USART3_Init 1 */
   huart3.Instance = USART3;
-  huart3.Init.BaudRate = 115200;
+  huart3.Init.BaudRate = 9600;//115200;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
   huart3.Init.Parity = UART_PARITY_NONE;
@@ -2212,7 +2221,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 	if (huart->Instance == USART2) {
 		uartRdy = 1;
 	}
-#ifdef SET_BLE
+#if defined(SET_BLE) || defined(SET_AUDIO)
 	else
 	if (huart->Instance == USART3) {
 		bleRdy = 1;
@@ -2225,7 +2234,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 	if (huart->Instance == USART2) {
 		devError |= devUART;
 	}
-#ifdef SET_BLE
+#if defined(SET_BLE) || defined(SET_AUDIO)
 	else
 	if (huart->Instance == USART3) {
 		devError |= devBLE;
@@ -2235,7 +2244,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 //-------------------------------------------------------------------------------------------
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-#ifdef SET_BLE
+#if defined(SET_BLE) || defined(SET_AUDIO)
 	if (huart->Instance == USART3) {
 		if ((rxbByte > 0x0D) && (rxbByte < 0x80)) {
 			if (rxbByte >= 0x20) adone = 1;
@@ -2282,7 +2291,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 //#ifdef SET_SLEEP
 //				start_sleep = get_tmr(WAIT_BEFORE_SLEEP);
 //#endif
-#ifdef SET_BLE
+#if defined(SET_BLE) || defined(SET_AUDIO)
 				if ( (strstr(rxBuf, "at+")) || (strstr(rxBuf, "AT+")) ) {
 					if (bleQueCmdFlag) {
 						int len = strlen(rxBuf);
@@ -2431,7 +2440,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 							break;
 						}
 					}
-#ifdef SET_BLE
+#if defined(SET_BLE) || defined(SET_AUDIO)
 				}
 #endif
 				//
