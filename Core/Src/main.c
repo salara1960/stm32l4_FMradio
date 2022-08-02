@@ -92,7 +92,8 @@ DMA_HandleTypeDef hdma_usart3_tx;
 //const char *ver = "1.5.3 28.07.22";// add ON/OFF dislay pin
 //const char *ver = "1.6 29.07.22";// add Infrared control
 //const char *ver = "1.6.1 29.07.22";// add read RDS (first step)
-const char *ver = "1.7 01.08.22";// remove BLE and add bluetooth_audio device
+//const char *ver = "1.7 01.08.22";// remove BLE and add bluetooth_audio device
+const char *ver = "1.7.1 02.08.22";// fixed minor bug in add to queue record
 
 
 
@@ -102,6 +103,24 @@ char tmp[128] = {0};
 char cmdBuf[MAX_UART_BUF] = {0};
 char strf[MAX_UART_BUF] = {0};
 uint16_t devError = HAL_OK;
+uint16_t last_devError = HAL_OK;
+const uint16_t all_devErr[MAX_ERR_CODE] = {
+		devTIK,
+		devUART,
+		devMEM,
+		devRTC,
+		devFIFO,
+		devSYS,
+		devSPI,
+		devLCD,
+		devRDA,
+		devFS
+#if defined(SET_BLE) || defined(SET_AUDIO)
+		,devBLE,
+		devQUE
+#endif
+};
+
 
 volatile static uint32_t secCounter = 0;//period 1s
 volatile static uint64_t msCounter = 0;//period 250ms
@@ -119,7 +138,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1659390226;//1659381664;
+static uint32_t epoch = 1659476485;//1659465512;//1659390226;//1659381664;
 //1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
@@ -189,7 +208,7 @@ const char *str_cmds[MAX_CMDS] = {
 	uint8_t wr_evt_err = 0;
 	uint8_t cnt_evt = 0;
 	uint8_t max_evt = 0;
-	bool lock_fifo = false;
+	//volatile bool lock_fifo = false;
 	int evt = evt_None;
 	int next_evt = evt_None;
 	volatile uint8_t cntEvt = 0;
@@ -292,7 +311,7 @@ uint8_t spiRdy = 1;
 	char txbBuf[MAX_BLE_BUF] = {0};
 	char bleBuf[MAX_BLE_BUF] = {0};
 	char bleRxBuf[MAX_BLE_BUF] = {0};
-	uint8_t ble_withDMA = 0;
+	uint8_t ble_withDMA = 1;
 	volatile uint8_t bleReady = 1;
 	uint8_t ble_stat = 0;
 	uint8_t adone = 0;
@@ -426,7 +445,7 @@ void bleWrite(const char *str, bool prn)
 		if (HAL_UART_Transmit(blePort, (uint8_t *)str, strlen(str), 1000) != HAL_OK) devError |= devBLE;
 	}
 
-	if (prn) Report(1, "[BLE] %s", str);
+	if (prn) Report(1, "[BLE_tx] %s", str);
 
 }
 //------------------------------------------------------------------------------------------
@@ -444,34 +463,24 @@ bool initRECQ(s_recq_t *q)
 	return true;
 }
 //-------------------------------------------------------------------------------------------
-bool clearRECQ(s_recq_t *q)
-{
-	while (q->lock) {}
-	q->lock = 1;
-
-	q->put = q->get = 0;
-	for (uint8_t i = 0; i < MAX_QREC; i++) {
-		q->rec[i].id = i;
-		free(q->rec[i].adr);
-		q->rec[i].adr = NULL;
-	}
-
-	q->lock = 0;
-
-	return false;
-}
-//-------------------------------------------------------------------------------------------
 int8_t putRECQ(char *adr, s_recq_t *q)
 {
 int8_t ret = -1;
+uint8_t wc = 255;
 
-	while (q->lock) {}
+	while (q->lock && --wc) {}
+	if (!wc) {
+		devError |= devQUE;
+		return ret;
+	}
 	q->lock = 1;
 
 	if (q->rec[q->put].adr == NULL) {
 		q->rec[q->put].adr = adr;
 		ret = q->rec[q->put].id;
-		q->put++;   if (q->put >= MAX_QREC) q->put = 0;
+		q->put++;
+		q->put &= MAX_QREC - 1;
+		//if (q->put >= MAX_QREC) q->put = 0;
 	}
 
 	q->lock = 0;
@@ -483,8 +492,15 @@ int8_t getRECQ(char *dat, s_recq_t *q)
 {
 int8_t ret = -1;
 int len = 0;
+uint8_t wc = 255;
 
-	while (q->lock) {}
+	while (q->lock && --wc) {
+		//HAL_Delay(1);
+	}
+	if (!wc) {
+		devError |= devQUE;
+		return ret;
+	}
 	q->lock = 1;
 
 	if (q->rec[q->get].adr != NULL) {
@@ -497,7 +513,9 @@ int len = 0;
 
 	if (ret >= 0) {
 		if (dat) *(dat + len) = '\0';
-		q->get++;   if (q->get >= MAX_QREC) q->get = 0;
+		q->get++;
+		q->get &= MAX_QREC - 1;
+		//if (q->get >= MAX_QREC) q->get = 0;
 	}
 
 	q->lock = 0;
@@ -508,6 +526,41 @@ int len = 0;
 
 #endif
 
+//-------------------------------------------------------------------------------------------
+static char *errName(uint16_t err)
+{
+
+	switch (err) {
+		case devTIK:// = 1,
+			return "devTIK";
+		case devUART:// = 2,
+			return "devUART";
+		case devMEM://= 4,
+			return "devMEM";
+		case devRTC:// = 8,
+			return "devRTC";
+		case devFIFO:// = 0x10,
+			return "devFIFO";
+		case devSYS:// = 0x20,
+			return "devSYS";
+		case devSPI:// = 0x40,
+			return "devSPI";
+		case devLCD:// = 0x80,
+			return "devLCD";
+		case devRDA:// = 0x100,
+			return "devRDA";
+		case devFS:// = 0x200
+			return "devFS";
+#if defined(SET_BLE) || defined(SET_AUDIO)
+		case devBLE:// = 0x400,
+			return "devBLE";
+		case devQUE:// = 0x800
+			return "devQUE";
+#endif
+	}
+
+	return "???";
+}
 //-------------------------------------------------------------------------------------------
 
 /* USER CODE END 0 */
@@ -689,7 +742,7 @@ int main(void)
 	#ifdef SET_BLE
     	bleWrite("AT+RESET\r\n", 1);
     	ble_stat = get_bleStat();
-    	Report(1, "[BLE] stat(%u) '%s'\r\n", ble_stat, ble_statName[ble_stat & 1]);
+    	Report(1, "BLE stat(%u) '%s'\r\n", ble_stat, ble_statName[ble_stat & 1]);
 	#endif
 #endif
 
@@ -721,7 +774,7 @@ int main(void)
   		if (!tmr_ired) {
 			if (decodeIRED(&results)) {
 
-				tmr_ired = get_mstmr(_300ms);
+				tmr_ired = get_mstmr(_250ms);
 				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
 				int8_t kid = -1;
 				for (int8_t i = 0; i < MAX_IRED_KEY; i++) {
@@ -817,30 +870,19 @@ int main(void)
 									ST7565_Update();
 									ep_tmr = get_tmr(20);
 								}
+							} else {
+									newFreq = list[kid - key_0 + 2].freq;//for band=2 only !!!
+									putEvt(evt_Freq);
 							}
 						break;
 					}//switch (kid)
 				}//if (kid != -1)
-				//if (!ep_start) {
-				//	//spi_ssd1306_text_xy(mkLineCenter(stline, FONT_WIDTH), 1, 7, false);
-				//	clr_tmr = get_tmr(5);
-				//}
 			}//if (decodeIRED(&results))
 		}
-  		//if (clr_tmr) {
-  		//	if (check_tmr(clr_tmr)) {
-  		//		clr_tmr = 0;
-  		//		//spi_ssd1306_clear_line(7, false);
-  		//	}
-  		//}
   		if (ep_tmr) {
   			if (check_tmr(ep_tmr)) {
   				ep_tmr = 0;
   				ep_start = false;
-#ifdef SET_OLED_SPI
-  				spi_ssd1306_clear_line(8, false);
-#endif
-
   			}
   		}
 		if (tmr_ired) {
@@ -1160,7 +1202,7 @@ int main(void)
 #if defined(SET_BLE) || defined(SET_AUDIO)
     	if (bleQueAckFlag) {
     		if (getRECQ(bleRxBuf, &bleQueAck) >= 0) {
-    			Report(1, "[BLE] %s\r\n", bleRxBuf);
+    			Report(1, "[BLE_rx] %s\r\n", bleRxBuf);
     		}
     	}
     	//
@@ -1174,6 +1216,16 @@ int main(void)
 
 
     	if (devError) {
+    		if (last_devError != devError) {
+    			last_devError = devError;
+    			tmp[0] = '\0';
+    			uint16_t er = 0;
+    			for (int8_t i = 0; i < MAX_ERR_CODE; i++) {
+    				er = devError & all_devErr[i];
+    				if (er) sprintf(tmp+strlen(tmp), " '%s'", errName(er));
+    			}
+    			Report(1, "Error 0x%04X %s\r\n", devError, tmp);
+    		}
     		errLedOn(true);
     		HAL_Delay(50);
     		errLedOn(false);
@@ -1181,6 +1233,7 @@ int main(void)
     		if (HAL_GPIO_ReadPin(ERR_LED_GPIO_Port, ERR_LED_Pin)) errLedOn(false);
     	}
 
+    	HAL_Delay(2);
 
     /* USER CODE END WHILE */
 
@@ -1585,7 +1638,7 @@ static void MX_USART3_UART_Init(void)
 
   /* USER CODE END USART3_Init 1 */
   huart3.Instance = USART3;
-  huart3.Init.BaudRate = 9600;//115200;
+  huart3.Init.BaudRate = 9600;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
   huart3.Init.Parity = UART_PARITY_NONE;
@@ -1665,7 +1718,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(SPI1_CS_GPIO_Port, SPI1_CS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin|SPI1_DC_Pin|BLE_WAKEUP_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin|SPI1_DC_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
@@ -1692,12 +1745,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
   HAL_GPIO_Init(ERR_LED_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : CPU_WAKEUP_Pin */
-  GPIO_InitStruct.Pin = CPU_WAKEUP_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(CPU_WAKEUP_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : TIK_LED_Pin */
   GPIO_InitStruct.Pin = TIK_LED_Pin;
@@ -1746,19 +1793,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(SPI1_DC_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : BLE_WAKEUP_Pin */
-  GPIO_InitStruct.Pin = BLE_WAKEUP_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-  HAL_GPIO_Init(BLE_WAKEUP_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : BLE_STAT_Pin */
-  GPIO_InitStruct.Pin = BLE_STAT_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(BLE_STAT_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI1_IRQn, 0, 0);
@@ -2246,36 +2280,38 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 #if defined(SET_BLE) || defined(SET_AUDIO)
 	if (huart->Instance == USART3) {
-		if ((rxbByte > 0x0D) && (rxbByte < 0x80)) {
+		/*if ((rxbByte > 0x0D) && (rxbByte < 0x80)) {
 			if (rxbByte >= 0x20) adone = 1;
 			if (adone) rxbBuf[rxbInd++] = (char)rxbByte;
-		}
-		if (adone) {
-		//rxbBuf[rxbInd++] = (char)rxbByte;
+		}*/
+		//if (adone) {
+			rxbBuf[rxbInd++] = (char)rxbByte;
 			if (rxbByte == 0x0a) {// '\n'
-				//rxbBuf[--rxbInd] = '\0';
+				rxbBuf[--rxbInd] = '\0';
 				if (bleQueAckFlag) {
 					int len = strlen(rxbBuf);
 					// Блок помещает в очередь ответов на команду очередное сообщение от модуля BLE
-					char *from = (char *)calloc(1, len + 1);
-					if (from) {
-						memcpy(from, rxbBuf, len);
-						if (putRECQ(from, &bleQueAck) < 0) {
-							devError |= devQUE;
-							free(from);
+					if (len > 1) {
+						char *from = (char *)calloc(1, len + 1);
+						if (from) {
+							strncpy(from, rxbBuf, len);
+							if (putRECQ(from, &bleQueAck) < 0) {
+								devError |= devQUE;
+								free(from);
+							} else {
+								if (devError & devQUE) devError &= ~devQUE;
+							}
 						} else {
-							if (devError & devQUE) devError &= ~devQUE;
+							devError |= devMEM;
 						}
-					} else {
-						devError |= devMEM;
 					}
 					//-----------------------------------------------------------------------------
 				}
 				rxbInd = 0;
-				adone = 0;
+				//adone = 0;
 				memset(rxbBuf, 0, sizeof(rxbBuf));
 			}
-		}
+		//}
 		//
 		if (HAL_UART_Receive_IT(huart, &rxbByte, 1) != HAL_OK) devError |= devBLE;
 	}
@@ -2287,12 +2323,12 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 			rxBuf[--rxInd] = '\0';
 
 			int i, ev = -1;
-			if (strlen(rxBuf) > 2) {
+			if (strlen(rxBuf) >= 2) {
 //#ifdef SET_SLEEP
 //				start_sleep = get_tmr(WAIT_BEFORE_SLEEP);
 //#endif
 #if defined(SET_BLE) || defined(SET_AUDIO)
-				if ( (strstr(rxBuf, "at+")) || (strstr(rxBuf, "AT+")) ) {
+				if ( (strstr(rxBuf, "at")) || (strstr(rxBuf, "AT")) ) {
 					if (bleQueCmdFlag) {
 						int len = strlen(rxBuf);
 						// Блок помещает в очередь команд очередную команду модулю BLE

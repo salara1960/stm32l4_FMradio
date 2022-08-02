@@ -200,6 +200,9 @@ enum {
 #define MAX_UART_BUF    1024
 #if defined(SET_BLE) || defined(SET_AUDIO)
 	#define MAX_BLE_BUF  256
+	#define MAX_ERR_CODE 12
+#else
+#define MAX_ERR_CODE 10
 #endif
 #define MAX_CMDS          24
 #define MAX_LIST          25
@@ -244,8 +247,6 @@ void Report(const uint8_t addTime, const char *fmt, ...);
 #define KEY1_EXTI_IRQn EXTI2_IRQn
 #define ERR_LED_Pin GPIO_PIN_3
 #define ERR_LED_GPIO_Port GPIOC
-#define CPU_WAKEUP_Pin GPIO_PIN_0
-#define CPU_WAKEUP_GPIO_Port GPIOA
 #define TIK_LED_Pin GPIO_PIN_1
 #define TIK_LED_GPIO_Port GPIOA
 #define LOG_TX_Pin GPIO_PIN_2
@@ -264,10 +265,6 @@ void Report(const uint8_t addTime, const char *fmt, ...);
 #define SPI1_RST_GPIO_Port GPIOD
 #define SPI1_DC_Pin GPIO_PIN_5
 #define SPI1_DC_GPIO_Port GPIOB
-#define BLE_WAKEUP_Pin GPIO_PIN_8
-#define BLE_WAKEUP_GPIO_Port GPIOB
-#define BLE_STAT_Pin GPIO_PIN_9
-#define BLE_STAT_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
 extern I2C_HandleTypeDef hi2c1;
@@ -296,7 +293,7 @@ extern uint8_t spiRdy;
 
 #if defined(SET_BLE) || defined(SET_AUDIO)
 
-#define MAX_QREC 32
+#define MAX_QREC 16
 
 #pragma pack(push,1)
 typedef struct que_rec_t {
