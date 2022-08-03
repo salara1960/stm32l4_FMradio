@@ -93,7 +93,8 @@ DMA_HandleTypeDef hdma_usart3_tx;
 //const char *ver = "1.6 29.07.22";// add Infrared control
 //const char *ver = "1.6.1 29.07.22";// add read RDS (first step)
 //const char *ver = "1.7 01.08.22";// remove BLE and add bluetooth_audio device
-const char *ver = "1.7.1 02.08.22";// fixed minor bug in add to queue record
+//const char *ver = "1.7.1 02.08.22";// fixed minor bug in add to queue record
+const char *ver = "1.7.2 03.08.22";
 
 
 
@@ -138,7 +139,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1659476485;//1659465512;//1659390226;//1659381664;
+static uint32_t epoch = 1659535529;//1659476485;//1659465512;//1659390226;//1659381664;
 //1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
@@ -466,21 +467,21 @@ bool initRECQ(s_recq_t *q)
 int8_t putRECQ(char *adr, s_recq_t *q)
 {
 int8_t ret = -1;
-uint8_t wc = 255;
+/*uint8_t wc = 255;
 
 	while (q->lock && --wc) {}
 	if (!wc) {
 		devError |= devQUE;
 		return ret;
-	}
+	}*/
 	q->lock = 1;
 
 	if (q->rec[q->put].adr == NULL) {
 		q->rec[q->put].adr = adr;
 		ret = q->rec[q->put].id;
 		q->put++;
-		q->put &= MAX_QREC - 1;
-		//if (q->put >= MAX_QREC) q->put = 0;
+		//q->put &= MAX_QREC - 1;
+		if (q->put >= MAX_QREC) q->put = 0;
 	}
 
 	q->lock = 0;
@@ -492,7 +493,7 @@ int8_t getRECQ(char *dat, s_recq_t *q)
 {
 int8_t ret = -1;
 int len = 0;
-uint8_t wc = 255;
+/*uint8_t wc = 255;
 
 	while (q->lock && --wc) {
 		//HAL_Delay(1);
@@ -500,7 +501,7 @@ uint8_t wc = 255;
 	if (!wc) {
 		devError |= devQUE;
 		return ret;
-	}
+	}*/
 	q->lock = 1;
 
 	if (q->rec[q->get].adr != NULL) {
@@ -514,8 +515,8 @@ uint8_t wc = 255;
 	if (ret >= 0) {
 		if (dat) *(dat + len) = '\0';
 		q->get++;
-		q->get &= MAX_QREC - 1;
-		//if (q->get >= MAX_QREC) q->get = 0;
+		//q->get &= MAX_QREC - 1;
+		if (q->get >= MAX_QREC) q->get = 0;
 	}
 
 	q->lock = 0;
@@ -774,7 +775,7 @@ int main(void)
   		if (!tmr_ired) {
 			if (decodeIRED(&results)) {
 
-				tmr_ired = get_mstmr(_250ms);
+				tmr_ired = get_mstmr(_300ms);
 				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
 				int8_t kid = -1;
 				for (int8_t i = 0; i < MAX_IRED_KEY; i++) {
@@ -1233,7 +1234,7 @@ int main(void)
     		if (HAL_GPIO_ReadPin(ERR_LED_GPIO_Port, ERR_LED_Pin)) errLedOn(false);
     	}
 
-    	HAL_Delay(2);
+    	//HAL_Delay(2);
 
     /* USER CODE END WHILE */
 
@@ -1853,6 +1854,7 @@ void putEvt(int evt)
 
 	HAL_NVIC_DisableIRQ(USART2_IRQn);
 	HAL_NVIC_DisableIRQ(TIM4_IRQn);
+	HAL_NVIC_DisableIRQ(TIM6_IRQn);
 	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
 	HAL_NVIC_DisableIRQ(EXTI2_IRQn);
 
@@ -1875,6 +1877,7 @@ void putEvt(int evt)
 
 		HAL_NVIC_EnableIRQ(EXTI2_IRQn);
 		HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+		HAL_NVIC_EnableIRQ(TIM6_IRQn);
 		HAL_NVIC_EnableIRQ(TIM4_IRQn);
 		HAL_NVIC_EnableIRQ(USART2_IRQn);
 
@@ -1890,6 +1893,7 @@ int ret = evt_None;
 
 	HAL_NVIC_DisableIRQ(USART2_IRQn);
 	HAL_NVIC_DisableIRQ(TIM4_IRQn);
+	HAL_NVIC_DisableIRQ(TIM6_IRQn);
 	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
 	HAL_NVIC_DisableIRQ(EXTI2_IRQn);
 
@@ -1905,6 +1909,7 @@ int ret = evt_None;
 
 	HAL_NVIC_EnableIRQ(EXTI2_IRQn);
 	HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+	HAL_NVIC_EnableIRQ(TIM6_IRQn);
 	HAL_NVIC_EnableIRQ(TIM4_IRQn);
 	HAL_NVIC_EnableIRQ(USART2_IRQn);
 
@@ -2289,7 +2294,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 			if (rxbByte == 0x0a) {// '\n'
 				rxbBuf[--rxbInd] = '\0';
 				if (bleQueAckFlag) {
-					int len = strlen(rxbBuf);
+					/*int len = strlen(rxbBuf);
 					// Блок помещает в очередь ответов на команду очередное сообщение от модуля BLE
 					if (len > 1) {
 						char *from = (char *)calloc(1, len + 1);
@@ -2304,7 +2309,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 						} else {
 							devError |= devMEM;
 						}
-					}
+					}*/
 					//-----------------------------------------------------------------------------
 				}
 				rxbInd = 0;
