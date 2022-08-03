@@ -55,7 +55,7 @@ enum {
 	devUART = 2,
 	devMEM = 4,
 	devRTC = 8,
-	devFIFO = 0x10,
+	devEVT = 0x10,
 	devSYS = 0x20,
 	devSPI = 0x40,
 	devLCD = 0x80,
@@ -93,7 +93,10 @@ enum {
 	cmdExitSleep,
 	cmdSleep,
 	cmdSleepCont,
-	cmdRds
+	cmdRds,
+	cmdEvt,
+	cmdAck,
+	cmdCmd
 };
 
 enum {
@@ -121,7 +124,10 @@ enum {
 	evt_ExitSleep,
 	evt_Sleep,
 	evt_SleepCont,
-	evt_Rds
+	evt_Rds,
+	evt_Evt,
+	evt_Ack,
+	evt_Cmd
 };
 
 
@@ -159,10 +165,15 @@ enum {
 #define _80ms (_10ms * 8)
 #define _90ms (_10ms * 9)
 #define _100ms (_10ms * 10)
+#define _110ms (_10ms * 11)
+#define _120ms (_10ms * 12)
 #define _130ms (_10ms * 13)
+#define _140ms (_10ms * 14)
 #define _150ms (_10ms * 15)
 #define _160ms (_10ms * 16)
 #define _170ms (_10ms * 17)
+#define _180ms (_10ms * 18)
+#define _190ms (_10ms * 19)
 #define _200ms (_10ms * 20)
 #define _250ms (_10ms * 25)
 #define _300ms (_10ms * 30)
@@ -204,7 +215,7 @@ enum {
 #else
 #define MAX_ERR_CODE 10
 #endif
-#define MAX_CMDS          24
+#define MAX_CMDS          27
 #define MAX_LIST          25
 #define MAX_BAND           4
 #define MAX_STEP           4
@@ -294,6 +305,20 @@ extern uint8_t spiRdy;
 #if defined(SET_BLE) || defined(SET_AUDIO)
 
 #define MAX_QREC 16
+
+#pragma pack(push,1)
+typedef struct rec_evt_t {
+	int evt;
+	uint32_t attr;
+} rec_evt_t;
+#pragma pack(pop)
+
+#pragma pack(push,1)
+typedef struct rec_msg_t {
+	char *msg;
+} rec_msg_t;
+#pragma pack(pop)
+
 
 #pragma pack(push,1)
 typedef struct que_rec_t {

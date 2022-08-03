@@ -23,6 +23,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -63,6 +64,33 @@ UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart2_tx;
 DMA_HandleTypeDef hdma_usart3_tx;
 
+/* Definitions for defTask */
+osThreadId_t defTaskHandle;
+const osThreadAttr_t defTask_attributes = {
+  .name = "defTask",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for evtQue */
+osMessageQueueId_t evtQueHandle;
+const osMessageQueueAttr_t evtQue_attributes = {
+  .name = "evtQue"
+};
+/* Definitions for cmdQue */
+osMessageQueueId_t cmdQueHandle;
+const osMessageQueueAttr_t cmdQue_attributes = {
+  .name = "cmdQue"
+};
+/* Definitions for ackQue */
+osMessageQueueId_t ackQueHandle;
+const osMessageQueueAttr_t ackQue_attributes = {
+  .name = "ackQue"
+};
+/* Definitions for itSem */
+osSemaphoreId_t itSemHandle = NULL;
+const osSemaphoreAttr_t itSem_attributes = {
+  .name = "itSem"
+};
 /* USER CODE BEGIN PV */
 
 //const char *ver = "0.1 07.07.2022";
@@ -94,9 +122,16 @@ DMA_HandleTypeDef hdma_usart3_tx;
 //const char *ver = "1.6.1 29.07.22";// add read RDS (first step)
 //const char *ver = "1.7 01.08.22";// remove BLE and add bluetooth_audio device
 //const char *ver = "1.7.1 02.08.22";// fixed minor bug in add to queue record
-const char *ver = "1.7.2 03.08.22";
+//const char *ver = "1.7.2 03.08.22";
+const char *ver = "1.8 03.08.22";// add FreeRTOS
 
 
+osThreadId_t irdTaskHandle;
+const osThreadAttr_t irdTask_attributes = {
+  .name = "irdTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityBelowNormal7,//osPriorityNormal,
+};
 
 
 char stx[MAX_UART_BUF] = {0};
@@ -110,7 +145,7 @@ const uint16_t all_devErr[MAX_ERR_CODE] = {
 		devUART,
 		devMEM,
 		devRTC,
-		devFIFO,
+		devEVT,
 		devSYS,
 		devSPI,
 		devLCD,
@@ -139,7 +174,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1659535529;//1659476485;//1659465512;//1659390226;//1659381664;
+static uint32_t epoch = 1659558535;//1659552520;//1659535529;//1659476485;//1659465512;//1659390226;//1659381664;
 //1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
@@ -173,7 +208,10 @@ const char *s_cmds[MAX_CMDS] = {
 	"exitsleep",
 	"sleep",
 	"sleepcont",
-	"rds"
+	"rds",
+	"qevt",
+	"qack",
+	"qcmd"
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -199,24 +237,17 @@ const char *str_cmds[MAX_CMDS] = {
 	"ExitSleep",
 	"Sleep",
 	"SleepCont",
-	"readRDS"
+	"readRDS",
+	"queEvt",
+	"queAck",
+	"queCmd"
 };
 
-#ifdef SET_FIFO_MODE
-	static int evt_fifo[MAX_FIFO_SIZE] = {evt_None};
-	uint8_t rd_evt_adr = 0;
-	uint8_t wr_evt_adr = 0;
-	uint8_t wr_evt_err = 0;
-	uint8_t cnt_evt = 0;
-	uint8_t max_evt = 0;
-	//volatile bool lock_fifo = false;
-	int evt = evt_None;
-	int next_evt = evt_None;
-	volatile uint8_t cntEvt = 0;
-#endif
 
+int evt = evt_None;
+int next_evt = evt_None;
+volatile uint8_t cntEvt = 0;
 
-//     Служебные переменные для внутренних модулей SPI
 uint32_t spi_cnt = 0;
 uint8_t spiRdy = 1;
 //
@@ -322,11 +353,12 @@ uint8_t spiRdy = 1;
 	bool bleQueAckFlag = false;
 	bool bleQueCmdFlag = false;
 	const char *ble_statName[] = {"Disconnected", "Connected"};
+	rec_msg_t _ack;
+	rec_msg_t _cmd;
 #endif
 
 #ifdef SET_SLEEP
 	bool sleep_mode = false;
-	//uint32_t tms = 0;
 #endif
 
 #ifdef SET_IRED
@@ -359,6 +391,7 @@ uint8_t spiRdy = 1;
 	char stline[40] = {0};
 #endif
 
+uint8_t prio = 0;
 
 /* USER CODE END PV */
 
@@ -374,13 +407,11 @@ static void MX_SPI1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_TIM6_Init(void);
+void StartTask(void *argument);
+void irdTask(void *argument);
+
 /* USER CODE BEGIN PFP */
 
-#ifdef SET_FIFO_MODE
-	uint8_t getEvtCount();
-	void putEvt(int evt);
-	int getEvt();
-#endif
 uint32_t get_tmr(uint32_t sec);
 bool check_tmr(uint32_t sec);
 uint64_t get_mstmr(uint64_t hs);
@@ -428,7 +459,9 @@ uint8_t get_bleStat()
 //-------------------------------------------------------------------------------------------
 #endif
 
+
 #if defined(SET_BLE) || defined(SET_AUDIO)
+//-------------------------------------------------------------------------------------------
 void bleWrite(const char *str, bool prn)
 {
 	if (sleep_mode) return;
@@ -450,82 +483,9 @@ void bleWrite(const char *str, bool prn)
 
 }
 //------------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------
-bool initRECQ(s_recq_t *q)
-{
-	q->put = q->get = 0;
-	q->lock = 0;
-	for (uint8_t i = 0; i < MAX_QREC; i++) {
-		q->rec[i].id = i;
-		q->rec[i].adr = NULL;
-	}
-
-	return true;
-}
-//-------------------------------------------------------------------------------------------
-int8_t putRECQ(char *adr, s_recq_t *q)
-{
-int8_t ret = -1;
-/*uint8_t wc = 255;
-
-	while (q->lock && --wc) {}
-	if (!wc) {
-		devError |= devQUE;
-		return ret;
-	}*/
-	q->lock = 1;
-
-	if (q->rec[q->put].adr == NULL) {
-		q->rec[q->put].adr = adr;
-		ret = q->rec[q->put].id;
-		q->put++;
-		//q->put &= MAX_QREC - 1;
-		if (q->put >= MAX_QREC) q->put = 0;
-	}
-
-	q->lock = 0;
-
-	return ret;
-}
-//-------------------------------------------------------------------------------------------
-int8_t getRECQ(char *dat, s_recq_t *q)
-{
-int8_t ret = -1;
-int len = 0;
-/*uint8_t wc = 255;
-
-	while (q->lock && --wc) {
-		//HAL_Delay(1);
-	}
-	if (!wc) {
-		devError |= devQUE;
-		return ret;
-	}*/
-	q->lock = 1;
-
-	if (q->rec[q->get].adr != NULL) {
-		len = strlen(q->rec[q->get].adr);
-		ret = q->rec[q->get].id;
-		if (dat) memcpy(dat, q->rec[q->get].adr, len);
-		free(q->rec[q->get].adr);
-		q->rec[q->get].adr = NULL;
-	}
-
-	if (ret >= 0) {
-		if (dat) *(dat + len) = '\0';
-		q->get++;
-		//q->get &= MAX_QREC - 1;
-		if (q->get >= MAX_QREC) q->get = 0;
-	}
-
-	q->lock = 0;
-
-	return ret;
-}
-//-------------------------------------------------------------------------------------------
-
 #endif
+//------------------------------------------------------------------------------------------
+
 
 //-------------------------------------------------------------------------------------------
 static char *errName(uint16_t err)
@@ -540,8 +500,8 @@ static char *errName(uint16_t err)
 			return "devMEM";
 		case devRTC:// = 8,
 			return "devRTC";
-		case devFIFO:// = 0x10,
-			return "devFIFO";
+		case devEVT:// = 0x10,
+			return "devEVT";
 		case devSYS:// = 0x20,
 			return "devSYS";
 		case devSPI:// = 0x40,
@@ -622,641 +582,73 @@ int main(void)
 
     set_Date(epoch);
 
-    HAL_Delay(100);
+    //HAL_Delay(200);
 
-    Report(1, "[que:%u] Start application ver.%s\r\n", cntEvt, ver);
+    //uint16_t lastErr = devOK;
 
-#ifdef SET_W25FLASH
-    chipPresent = W25qxx_Init();
-    uint32_t cid = W25qxx_getChipID();
-    if ( chipPresent && ((cid >= W25Q10) && (cid <= W25Q128)) ) validChipID = true;
-    list_sector = W25qxx_getPageSize() << 1;
-    //
-    listSize = sizeof(rec_t) * MAX_LIST;
-    memset((uint8_t *)&list[0].band, 0, listSize);
-    //
-    cfgSector = W25qxx_getSectorCount() - 1;
-    if (W25qxx_IsEmptySector(cfgSector, 0, listSize)) {//sector is empty -> need write data to sector
-    	if (!(devError & devSPI)) {
-    		W25qxx_WriteSector((uint8_t *)&def_list[0].band, cfgSector, 0, listSize);
-    		Report(1, "Writen cfg_stations_data (%lu bytes) to cfgSector #%lu\r\n", listSize, cfgSector);
-      	}
-    } else {//in sector	present any data
-    	if (!(devError & devSPI)) {
-    		W25qxx_ReadSector((uint8_t *)&list[0].band, cfgSector, 0, listSize);
-    		Report(1, "Readed cfg_stations_data (%lu bytes) from cfgSector #%lu\r\n", listSize, cfgSector);
-      	} else {
-      		memcpy((uint8_t *)&list[0].band, (uint8_t *)&def_list[0].band, listSize);
-      	}
-    }
-#endif
-
-
-#ifdef SET_RDA_CHIP
-
-    rdaID = rda5807_init(&Freq);
-    RSSI = rda5807_rssi();
-    rda5807_SetVolume(Volume);
-    rda5807_SetBassBoost(BassBoost);
-    stereo = rda5807_Get_StereoMonoFlag();
-    Chan = rda5807_Get_Channel();
-
-#endif
-
-#ifdef SET_DISPLAY
-
-	#ifdef FONT_6x8
-  		FontDef_t Font_6x8 = { 6, 8, Font6x8 };
-  		lfnt = &Font_6x8;
-	#endif
-
-  	uint16_t lin1 = 1;
-  	uint16_t lin2 = lin1 + Font_6x8.FontHeight;//chipID...
-  	uint16_t lin3 = lin2 + Font_6x8.FontHeight + 1;//Band...
-  	uint16_t lin4 = lin3 + Font_6x8.FontHeight + 1;//Volume...//Freq...
-  	uint16_t lin5 = lin4 + Font_6x8.FontHeight + 1;//Freq...//Volume...
-  	uint16_t lin6 = lin5 + Font_6x8.FontHeight + 1;//Station
-  	char st[64];
-  	char sta[32];
-  	char stb[32];
-
-  	ST7565_Reset();
-  	ST7565_Init();
-
-    int dl = sprintf(tmp, "Ver.%s", ver);
-    uint16_t x = ((SCREEN_WIDTH - (Font_6x8.FontWidth * dl)) >> 1) & 0x7f;
-    ST7565_Print(x, SCREEN_HEIGHT - Font_6x8.FontHeight, tmp, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
-
-	#ifdef SET_RDA_CHIP
-    	int il = sprintf(st, "RDA5807 chipID:0x%x", rdaID);
-    	uint16_t xf = ((SCREEN_WIDTH - (Font_6x8.FontWidth * il)) >> 1) & 0x7f;
-    	if (!xf) xf = 1;
-    	ST7565_Print(xf, lin2, st, &Font_6x8, 1, PIX_ON);
-
-    	int it = sprintf(stb, "FM Band:%s", allBands[Band]);//(uint16_t)lBand, (uint16_t)rBand);
-    	int lit = it;
-    	xf = ((SCREEN_WIDTH - (Font_6x8.FontWidth * it)) >> 1) & 0x7f;
-    	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
-    	ST7565_Print(xf, lin3, stb, &Font_6x8, 1, PIX_ON);
-
-    	int im = sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
-    	int lim = im;
-    	xf = ((SCREEN_WIDTH - (Font_6x8.FontWidth * im)) >> 1) & 0x7f;
-    	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
-    	ST7565_Print(xf, lin4, st, &Font_6x8, 1, PIX_ON);
-
-    	if (stereo)
-    		il = sprintf(st, "Rssi:%u Freq:%.1f S", RSSI, Freq);
-    	else
-    		il = sprintf(st, "Rssi:%u Freq:%.1f", RSSI, Freq);
-    	int lil = il;
-    	xf = ((SCREEN_WIDTH - (Font_6x8.FontWidth * il)) >> 1) & 0x7f;
-    	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
-    	ST7565_Print(xf, lin5, st, &Font_6x8, 1, PIX_ON);
-
-    	int ia = sprintf(sta, "%s", nameStation(Freq));
-    	int lia = ia;
-    	xf = ((SCREEN_WIDTH - (Font_6x8.FontWidth * ia)) >> 1) & 0x7f;
-    	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
-    	ST7565_Print(xf, lin6, sta, &Font_6x8, 1, PIX_ON);
-
-    	Report(1, "ChipID:0x%x Chan:%u Freq:%.2f %s RSSI:%u Band:%s Vol:%u BassEn:%u\r\n",
-    			rdaID, Chan, Freq, sta, RSSI, allBands[Band], Volume, BassBoost);
-	#endif
-
-    ST7565_DrawRectangle(0, Font_6x8.FontHeight, SCREEN_WIDTH - 1, SCREEN_HEIGHT - (Font_6x8.FontHeight << 1) - 2, PIX_ON);
-    ST7565_DrawFilledRectangle(0, 0, SCREEN_WIDTH - 1, Font_6x8.FontHeight, PIX_ON);
-    ST7565_Update();
-
-    startSec = true;
-
-#endif
-
-#if defined(SET_BLE) || defined(SET_AUDIO)
-	#ifdef SET_BLE
-    	bleWakeUp();
-	#endif
-
-    bleQueAckFlag   = initRECQ(&bleQueAck);
-    bleQueCmdFlag   = initRECQ(&bleQueCmd);
-
-	#ifdef SET_BLE
-    	bleWrite("AT+RESET\r\n", 1);
-    	ble_stat = get_bleStat();
-    	Report(1, "BLE stat(%u) '%s'\r\n", ble_stat, ble_statName[ble_stat & 1]);
-	#endif
-#endif
-
-
-#ifdef SET_IRED
-    bool ep_start = false;
-    char ep_str[16] = {0};
-    uint32_t ep_tmr = 0;
-	uint32_t tmr_ired = 0;
-	//uint32_t clr_tmr = 0;
-	enIntIRED();
-#endif
-
-
-    uint16_t lastErr = devOK;
-
-    putEvt(evt_Freq);
+    //putEvt(evt_Freq);
 
   /* USER CODE END 2 */
 
+  /* Init scheduler */
+  osKernelInitialize();
+
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* Create the semaphores(s) */
+  /* creation of itSem */
+  itSemHandle = osSemaphoreNew(1, 1, &itSem_attributes);
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* Create the queue(s) */
+  /* creation of evtQue */
+  evtQueHandle = osMessageQueueNew (8, sizeof(int), &evtQue_attributes);
+
+  /* creation of cmdQue */
+  cmdQueHandle = osMessageQueueNew (8, sizeof(rec_msg_t), &cmdQue_attributes);
+
+  /* creation of ackQue */
+  ackQueHandle = osMessageQueueNew (8, sizeof(rec_msg_t), &ackQue_attributes);
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* creation of defTask */
+  defTaskHandle = osThreadNew(StartTask, NULL, &defTask_attributes);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  HAL_Delay(250);
+  irdTaskHandle = osThreadNew(irdTask, NULL, &irdTask_attributes);
+  /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-
-
-    while (!restart) {
-
-/**/
-#ifdef SET_IRED
-  		if (!tmr_ired) {
-			if (decodeIRED(&results)) {
-
-				tmr_ired = get_mstmr(_300ms);
-				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
-				int8_t kid = -1;
-				for (int8_t i = 0; i < MAX_IRED_KEY; i++) {
-					if (results.value == keyAll[i].code) {
-						kid = i;
-						break;
-					}
-				}
-				//
-				if (kid == -1) sprintf(stline, "CODE:%08lX", results.value);
-						  else sprintf(stline, "irKEY: %s", keyAll[kid].name);
-				Report(1, "[que:%u] %s\r\n", cntEvt, stline);
-				//
-				if (kid != -1) {
-					switch (kid) {
-						case key_ch:
-							putEvt(evt_Restart);
-						break;
-						case key_ch_plus:
-							seek_up = 1;
-							putEvt(evt_Scan);
-						break;
-						case key_ch_minus:
-							seek_up = 0;
-							putEvt(evt_Scan);
-						break;
-						case key_minus:
-							if (Volume) {
-								newVolume = Volume - 1;
-								putEvt(evt_Vol);
-							}
-						break;
-						case key_plus:
-							if (Volume < 15) {
-								newVolume = Volume + 1;
-								putEvt(evt_Vol);
-							}
-						break;
-						case key_left:
-							seek_up = 0;
-							putEvt(evt_List);
-						break;
-						case key_right:
-							seek_up = 1;
-							putEvt(evt_List);
-						break;
-						case key_eq:// enable/disable print via uart
-							putEvt(evt_Mute);//evt_Sleep);
-						break;
-						case key_sp:
-							if (!ep_start) {
-								ep_start = true;
-								memset(ep_str, 0, sizeof(ep_str));
-								ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - Font_6x8.FontHeight, SCREEN_WIDTH - 1, Font_6x8.FontHeight, PIX_OFF);
-								sprintf(tmp, "Time:");
-								ST7565_Print(0, SCREEN_HEIGHT - Font_6x8.FontHeight, tmp, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
-								ST7565_Update();
-								ep_tmr = get_tmr(20);
-							} else {
-								ep_start = false;
-								ep_tmr = 0;
-								epoch = atoi(ep_str);
-								putEvt(evt_Epoch);
-							}
-						break;
-						case key_100://bandUp();
-							if (Band < MAX_BAND) {
-								newBand = Band + 1;
-								putEvt(evt_Band);
-							}
-						break;
-						case key_200://bandDown();
-							if (Band) {
-								newBand = Band - 1;
-								putEvt(evt_Band);
-							}
-						break;
-						case key_0:
-						case key_1:
-						case key_2:
-						case key_3:
-						case key_4:
-						case key_5:
-						case key_6:
-						case key_7:
-						case key_8:
-						case key_9:
-							if (ep_start) {
-								if (strlen(ep_str) < 10) {
-									char ch = (kid - key_0) + 0x30;
-									sprintf(ep_str+strlen(ep_str), "%c", ch);
-									ST7565_Print(32, SCREEN_HEIGHT - Font_6x8.FontHeight, ep_str, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
-									ST7565_Update();
-									ep_tmr = get_tmr(20);
-								}
-							} else {
-									newFreq = list[kid - key_0 + 2].freq;//for band=2 only !!!
-									putEvt(evt_Freq);
-							}
-						break;
-					}//switch (kid)
-				}//if (kid != -1)
-			}//if (decodeIRED(&results))
-		}
-  		if (ep_tmr) {
-  			if (check_tmr(ep_tmr)) {
-  				ep_tmr = 0;
-  				ep_start = false;
-  			}
-  		}
-		if (tmr_ired) {
-			if (check_mstmr(tmr_ired)) {
-				tmr_ired = 0;
-				resumeIRED();
-				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
-			}
-		}
-#endif
-/**/
-
-#ifdef SET_FIFO_MODE
-    	evt = getEvt();
-    	if (evt != evt_None) {
-    		cntEvt = getEvtCount();
-    		if (evt != evt_Sec) {
-    			Report(1, "[que:%u] get event '%s'\r\n", cntEvt, str_cmds[evt]);
-	#ifdef SET_DISPLAY
-    			ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - Font_6x8.FontHeight, SCREEN_WIDTH - 1, Font_6x8.FontHeight, PIX_OFF);
-    			dl = sprintf(tmp, "evt(%u) : %s", cntEvt, str_cmds[evt]);
-    			x = ((SCREEN_WIDTH - (Font_6x8.FontWidth * dl)) >> 1) & 0x7f;
-    			ST7565_Print(x, SCREEN_HEIGHT - Font_6x8.FontHeight, tmp, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
-    			ST7565_Update();
-	#endif
-    		}
-    		switch (evt) {
-    			case evt_Rds:
-    				memset(dataRDS, 0, sizeof(dataRDS));
-    				readyRds = rda5807_Get_RDSData(dataRDS, &syncRds);
-    				sprintf(tmp, "[RDS] ready=%d sync=%d :", readyRds, syncRds);
-    				for (int8_t i = 0; i < sizeof(dataRDS); i++)
-    					sprintf(tmp+strlen(tmp), " %02X", dataRDS[i]);
-    				Report(1, "%s\r\n", tmp);
-    			break;
-    			case evt_SleepCont:
-    				sleep_mode = true;
-    				//
-    				HAL_SuspendTick();
-    				HAL_PWR_EnableSleepOnExit();
-    				HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
-    				HAL_ResumeTick();
-    			break;
-    			case evt_Sleep:
-    				Report(1, "Going into SLEEP MODE...\r\n");// in 1 second\r\n");
-	#ifdef SET_BLE
-    				bleWrite("AT+SLEEP1\r\n", 1);
-	#endif
-	#ifdef SET_DISPLAY
-    				ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
-	#endif
-    				HAL_Delay(250);
-    				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
-
-    				putEvt(evt_SleepCont);
-    			break;
-    			case evt_ExitSleep:
-    				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
-	#ifdef SET_DISPLAY
-    				ST7565_CMD_DISPLAY(CMD_DISPLAY_ON);
-	#endif
-	#ifdef SET_BLE
-    				bleWakeUp();//putEvt(evt_WakeUp);
-	#endif
-    				Report(1, "Exit from SLEEP MODE\r\n");
-    			break;
-    			case evt_WakeUp:
-	#ifdef SET_BLE
-    				bleWakeUp();
-	#endif
-    			break;
-    			case evt_Band:
-    				Band = newBand;
-    				if (!rda5807_Set_Band(Band)) {
-    					sprintf(stb, "FM Band:%s", allBands[Band]);//(uint16_t)lBand, (uint16_t)rBand);
-    					showLine(stb, lin3, &lit, true);
-    					Report(1, "[que:%u] set new band=%u '%s'\r\n", cntEvt, Band, allBands[Band]);
-    					if (next_evt == evt) {
-    						if ((Freq < lBand) || (Freq > rBand)) {
-    							newFreq = lBand;
-    							putEvt(evt_Freq);
-    						}
-    					} else {
-    						next_evt = evt;
-    						putEvt(evt_Freq);
-    					}
-    				}
-    			break;
-    			case evt_Cfg:
-    				showCfg();
-    			break;
-    			case evt_List:
-    				next_evt = evt_Freq;
-    				newFreq = getNextList(Freq, seek_up, &newBand);
-					if (newBand == Band) {
-						Report(1, "Band = newBand = %u -> goto set newFreq to %.1f (up = %u)\r\n", newBand, newFreq, seek_up);
-    					putEvt(evt_Freq);
-					} else {
-						Report(1, "Band = %u -> goto set newBand to %u (newFreq to %.1f up = %u)\r\n", Band, newBand, newFreq, seek_up);
-    					putEvt(evt_Band);
-					}
-    			break;
-    			case evt_Bass:
-    				if (newBassBoost != BassBoost) {
-    					BassBoost = newBassBoost;
-    					rda5807_SetBassBoost(BassBoost);
-    					//
-    					if (noMute)
-    						sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
-    					else
-    						sprintf(st, "Bass:%u Vol:%u M", BassBoost, Volume);
-    					showLine(st, lin4, &lim, true);
-    					Report(1, "[que:%u] set new BassBoost to %u\r\n", cntEvt, BassBoost);
-    				}
-    			break;
-    			case evt_Vol:
-    				if (newVolume != Volume) {
-    					Volume = newVolume;
-    					rda5807_SetVolume(Volume);
-    					//
-    					if (noMute)
-    						sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
-    					else
-    						sprintf(st, "Bass:%u Vol:%u M", BassBoost, Volume);
-    					showLine(st, lin4, &lim, true);
-    					Report(1, "[que:%u] set new Volume to %u\r\n", cntEvt, Volume);
-    				}
-    			break;
-    			case evt_Mute:
-    				noMute = (~noMute) & 1;
-    				rda5807_Set_Mute(noMute);
-    				//
-    				if (noMute)
-    					sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
-    				else
-    					sprintf(st, "Bass:%u Vol:%u M", BassBoost, Volume);
-    				showLine(st, lin4, &lim, true);
-    				Report(1, "[que:%u] set Mute to %u\r\n", cntEvt, (~noMute) & 1);
-    			break;
-    			case evt_Freq:
-    				if ((newFreq >= lBand) && (newFreq <= rBand)) {
-    					if (newFreq != Freq) {
-    						Freq = newFreq;
-    						uint16_t fr = (uint16_t)(Freq * 10);
-    						rda5807_SetFreq_In100Khz(fr);
-    						stereo = rda5807_Get_StereoMonoFlag();
-    						Chan = rda5807_Get_Channel();
-    						//
-    						if (stereo)
-    							sprintf(st, "Rssi:%u Freq:%.1f S", RSSI, Freq);
-    						else
-    							sprintf(st, "Rssi:%u Freq:%.1f", RSSI, Freq);
-    						showLine(st, lin5, &lil, false);
-
-    						sprintf(sta, "%s", nameStation(Freq));
-    						showLine(sta, lin6, &lia, true);
-    						Report(1, "[que:%u] set new Freq to %.1f %s (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
-    					}
-    				}
-				break;
-    			case evt_Scan:
-    				if (!scan) {
-    					scan = 1;
-    					rda5807_StartSeek(seek_up);
-    				}
-    			break;
-    			case evt_Ver:
-    				Report(1, "Ver.%s\r\n", ver);
-    			break;
-    			case evt_Sec:
-    			{
-	#ifdef SET_DISPLAY
-    				dl = sec2str(st);
-    				x = ((SCREEN_WIDTH - (Font_6x8.FontWidth * dl)) >> 1) & 0x7f;
-    				ST7565_Print(x, lin1, st, &Font_6x8, 0, PIX_OFF);
-	#endif
-    				//
-    				if (scan) {
-    					if (rda5807_Get_SeekTuneReadyFlag()) {
-    						Freq = (float)rda5807_GetFreq_In100Khz();
-    						Freq /= 10;
-    						scan = 0;
-    						Chan = rda5807_Get_Channel();
-    						sprintf(sta, "%s", nameStation(Freq));
-    						showLine(sta, lin6, &lia, true);
-    						Report(1, "[que:%u] set new Freq to %.1f %s (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
-    					}
-    				}
-    				//
-    				uint16_t rssi = rda5807_rssi();
-    				if (rssi != RSSI) {
-    					RSSI = rssi;
-    					stereo = rda5807_Get_StereoMonoFlag();
-	#ifdef SET_DISPLAY
-    					if (stereo)
-    						sprintf(st, "Rssi:%u Freq:%.1f S", RSSI, Freq);
-    					else
-    						sprintf(st, "Rssi:%u Freq:%.1f", RSSI, Freq);
-    					showLine(st, lin5, &lil, false);
-
-    					//sprintf(sta, "'%s'", nameStation(Freq));
-    					//showLine(sta, lin6, &lia, true);
-    					////Report(1, "ChipID:0x%x Chan:%u Freq:%.2f RSSI:%u\r\n", rdaID, Chan, Freq, RSSI);
-	#endif
-    				}
-    				//
-    				if (devError) {
-    					dl = sprintf(tmp, "devError : 0x%04X", devError);
-    					lastErr = devError;
-    				} else {
-    					if (lastErr) {
-    						dl = sprintf(tmp, "Ver.%s", ver);
-    						lastErr = devOK;
-    					} else dl = 0;
-    				}
-	#ifdef SET_DISPLAY
-    				if (dl) {
-    					ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - Font_6x8.FontHeight, SCREEN_WIDTH - 1, Font_6x8.FontHeight, PIX_OFF);
-    					x = ((SCREEN_WIDTH - (Font_6x8.FontWidth * dl)) >> 1) & 0x7f;
-    					ST7565_Print(x, SCREEN_HEIGHT - Font_6x8.FontHeight, tmp, &Font_6x8, 1, PIX_ON);
-    					ST7565_Update();
-    				}
-    				//
-    				ST7565_Update();
-	#endif
-    			}
-    			break;
-    			case evt_Clr:
-    				devError = devOK;
-    				Report(1, "[que:%u] Clear all Errors...\r\n", cntEvt);
-    			break;
-    			case evt_Help:
-    				stx[0] = '\0';
-    				for (int8_t i = 0; i < MAX_CMDS; i++) sprintf(stx+strlen(stx), "\t%s\r\n", s_cmds[i]);
-    				Report(0, "%s", stx);
-    			break;
-    			case evt_Restart:
-    				restart = 1;
-    				Report(1, "[que:%u] Restart system...\r\n", cntEvt);
-    			break;
-    			case evt_Epoch:
-    				set_Date(epoch);
-    				Report(1, "[que:%u] Set Unix TimeStamp to %lu\r\n", cntEvt, epoch);
-    			break;
-    			case evt_Err:
-    				Report(1, "[que:%u] Error input from uart\r\n", cntEvt);
-    			break;
-	#ifdef SET_W25FLASH
-    			case evt_sRead:
-    			case evt_sNext:
-    			{
-    				uint32_t w25_adr = (adr_sector * W25qxx_getSectorSize()) + offset_sector;
-    				uint32_t dlin = list_sector;
-    				int step = 32;
-    				uint32_t ind = 0;
-    				W25qxx_ReadSector(fs_work, adr_sector, offset_sector, dlin);
-    				Report(0, "Read sector:%d offset:%d len:%u\r\n", adr_sector, offset_sector, dlin);
-    				while (ind < dlin) {
-    					strf[0] = '\0';
-    					while (1) {
-    						sprintf(strf+strlen(strf), "%06X ", (unsigned int)w25_adr);
-    						for (int i = 0; i < step; i++) sprintf(strf+strlen(strf), " %02X", fs_work[i + ind]);
-    						strcat(strf, "\r\n");
-    						w25_adr += step;
-    						ind += step;
-    						if (!(ind % W25qxx_getPageSize())) break;
-    					}
-    					Report(0, "%s", strf);
-    				}
-    			}
-    			break;
-    			case evt_sWrite:
-    			{
-    				uint32_t ss = W25qxx_getSectorSize();
-    				if (!W25qxx_IsEmptySector(adr_sector, 0, ss)) W25qxx_EraseSector(adr_sector);
-    				memset(fs_work, byte_write, ss);
-    				if (len_write != -1) ss = len_write;
-    				W25qxx_WriteSector(fs_work, adr_sector, offset_sector, ss);
-    				Report(0, "Fill sector:%d byte:%02X len:%d done\r\n", adr_sector, byte_write, ss);
-    			}
-    			break;
-    			case evt_sErase:
-    				if (adr_sector == -1) {
-    					Report(1, "Erase flash");
-    					flag_sector = true;
-    					btime = HAL_GetTick();
-    				} else {
-    					W25qxx_EraseSector(adr_sector);
-    					Report(1, "Erase sector:%d done\r\n", adr_sector);
-    				}
-    			break;
-	#endif
-    		}
-    		if ((evt >= evt_sRead) && (evt <= evt_sWrite)) {
-    			last_cmd_sector =  evt;//cmd_sector;
-    			cmd_sector = sNone;
-    		}
-    	}
-#endif
-
-#ifdef SET_W25FLASH
-    	if (flag_sector) {
-    		adr_sector++;
-    		if (adr_sector >= W25qxx_getSectorCount()) {
-    			flag_sector = false;
-    			etime = HAL_GetTick();
-    			Report(0, " done (%lu sec)\r\n", (etime - btime) / 1000);
-    		} else {
-    			//putEvt(evt_sErase);
-    			W25qxx_EraseSector(adr_sector);
-    			if (!(adr_sector % 8)) Report(0, ".");
-    		}
-    	}
-#endif
-
-
-#if defined(SET_BLE) || defined(SET_AUDIO)
-    	if (bleQueAckFlag) {
-    		if (getRECQ(bleRxBuf, &bleQueAck) >= 0) {
-    			Report(1, "[BLE_rx] %s\r\n", bleRxBuf);
-    		}
-    	}
-    	//
-    	if (bleQueCmdFlag) {//command to GSM module queue is ready
-    		if (getRECQ(bleBuf, &bleQueCmd) >= 0) {
-    			strcat(bleBuf, "\r\n");
-    			bleWrite(bleBuf, 1);
-    		}
-    	}
-#endif
-
-
-    	if (devError) {
-    		if (last_devError != devError) {
-    			last_devError = devError;
-    			tmp[0] = '\0';
-    			uint16_t er = 0;
-    			for (int8_t i = 0; i < MAX_ERR_CODE; i++) {
-    				er = devError & all_devErr[i];
-    				if (er) sprintf(tmp+strlen(tmp), " '%s'", errName(er));
-    			}
-    			Report(1, "Error 0x%04X %s\r\n", devError, tmp);
-    		}
-    		errLedOn(true);
-    		HAL_Delay(50);
-    		errLedOn(false);
-    	} else {
-    		if (HAL_GPIO_ReadPin(ERR_LED_GPIO_Port, ERR_LED_Pin)) errLedOn(false);
-    	}
-
-    	//HAL_Delay(2);
-
+  while (1)
+  {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
-    }//while (!restart)
-
-    HAL_TIM_Base_Stop_IT(tikPort);
-
-/*#ifdef SET_DISPLAY
-    ST7565_Reset();
-    ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
-#endif*/
-
-
-    Report(1, "[que:%u] Stop application...\r\n", cntEvt);
-
-    HAL_Delay(250);
-
-    NVIC_SystemReset();
-
-
+  }
   /* USER CODE END 3 */
 }
 
@@ -1670,25 +1062,25 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Channel2_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
   /* DMA1_Channel4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
   /* DMA1_Channel5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
   /* DMA1_Channel6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
   /* DMA1_Channel7_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 3, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
   /* DMA2_Channel4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Channel4_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA2_Channel4_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA2_Channel4_IRQn);
   /* DMA2_Channel6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Channel6_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA2_Channel6_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA2_Channel6_IRQn);
 
 }
@@ -1796,10 +1188,10 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(SPI1_DC_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI1_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(EXTI1_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 
-  HAL_NVIC_SetPriority(EXTI2_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(EXTI2_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI2_IRQn);
 
 }
@@ -1833,92 +1225,13 @@ char st = 0, ml = 0;
 //-------------------------------------------------------------------------------------------
 
 
-#ifdef SET_FIFO_MODE
 //-------------------------------------------------------------------------------------------
-uint8_t getEvtCount()
+uint32_t getQueCount(osMessageQueueId_t que)
 {
-	return cnt_evt;
+	return osMessageQueueGetCount(que);
 }
 //-------------------------------------------------------------------------------------------
-void putEvt(int evt)
-{
 
-	//while (lock_fifo);
-	//lock_fifo = true;
-
-	if (cnt_evt > (MAX_FIFO_SIZE - 3)) {
-		devError |= devFIFO;
-		//lock_fifo = false;
-		return;
-	}
-
-	HAL_NVIC_DisableIRQ(USART2_IRQn);
-	HAL_NVIC_DisableIRQ(TIM4_IRQn);
-	HAL_NVIC_DisableIRQ(TIM6_IRQn);
-	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
-	HAL_NVIC_DisableIRQ(EXTI2_IRQn);
-
-	if (cnt_evt >= MAX_FIFO_SIZE) {
-			wr_evt_err++;
-		} else {
-			evt_fifo[wr_evt_adr] = evt;
-			cnt_evt++;
-			if (wr_evt_adr < (MAX_FIFO_SIZE - 1) ) {
-				wr_evt_adr++;
-			} else  {
-				wr_evt_adr = 0;
-			}
-			wr_evt_err = 0;
-			if (cnt_evt > max_evt) max_evt = cnt_evt;
-		}
-
-		if (wr_evt_err) devError |= devFIFO;
-				   else devError &= ~devFIFO;
-
-		HAL_NVIC_EnableIRQ(EXTI2_IRQn);
-		HAL_NVIC_EnableIRQ(EXTI1_IRQn);
-		HAL_NVIC_EnableIRQ(TIM6_IRQn);
-		HAL_NVIC_EnableIRQ(TIM4_IRQn);
-		HAL_NVIC_EnableIRQ(USART2_IRQn);
-
-		//lock_fifo = false;
-}
-//-------------------------------------------------------------------------------------------
-int getEvt()
-{
-int ret = evt_None;
-
-	//while (lock_fifo);
-	//lock_fifo = true;
-
-	HAL_NVIC_DisableIRQ(USART2_IRQn);
-	HAL_NVIC_DisableIRQ(TIM4_IRQn);
-	HAL_NVIC_DisableIRQ(TIM6_IRQn);
-	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
-	HAL_NVIC_DisableIRQ(EXTI2_IRQn);
-
-	if (cnt_evt) {
-		ret = evt_fifo[rd_evt_adr];
-		if (cnt_evt) cnt_evt--;
-		if (rd_evt_adr < (MAX_FIFO_SIZE - 1) ) {
-			rd_evt_adr++;
-		} else {
-			rd_evt_adr = 0;
-		}
-	}
-
-	HAL_NVIC_EnableIRQ(EXTI2_IRQn);
-	HAL_NVIC_EnableIRQ(EXTI1_IRQn);
-	HAL_NVIC_EnableIRQ(TIM6_IRQn);
-	HAL_NVIC_EnableIRQ(TIM4_IRQn);
-	HAL_NVIC_EnableIRQ(USART2_IRQn);
-
-	//lock_fifo = false;
-
-	return ret;
-}
-//-------------------------------------------------------------------------------------------
-#endif
 
 //-------------------------------------------------------------------------------------------
 #ifdef SET_DISPLAY
@@ -2142,7 +1455,7 @@ int ret = 0;
 //--------------------------------------------------------------------------------------------
 void Report(const uint8_t addTime, const char *fmt, ...)
 {
-#ifdef SET_BLE
+#if defined(SET_BLE) || defined(SET_AUDIO)
 	if(sleep_mode) return;
 #endif
 
@@ -2173,9 +1486,17 @@ void Report(const uint8_t addTime, const char *fmt, ...)
 		va_start(args, fmt);
 		vsnprintf(buf + dl, len - dl, fmt, args);
 
-		uartRdy = false;
-		if (HAL_UART_Transmit_DMA(cmdPort, (uint8_t *)buf, strlen(buf)) != HAL_OK) devError |= devUART;
-		while (!uartRdy) {} //HAL_Delay(1)
+		//if (itSemHandle != NULL) {
+			if (osSemaphoreAcquire(itSemHandle, 2000) == osOK) {
+		//}
+				uartRdy = false;
+				if (HAL_UART_Transmit_DMA(cmdPort, (uint8_t *)buf, strlen(buf)) != HAL_OK) devError |= devUART;
+				while (!uartRdy) {} //HAL_Delay(1)
+
+		//if (itSemHandle) {
+				osSemaphoreRelease(itSemHandle);
+			}
+		//}
 
 		va_end(args);
 
@@ -2185,75 +1506,10 @@ void Report(const uint8_t addTime, const char *fmt, ...)
 	//}
 
 }
-//------------------------------------------------------------------------------------------
-
-
-
-//------------------------------------------------------------------------------------------
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-	if (htim->Instance == TIM4) {
-		msCounter++;//inc_msCounter();
-		if (!(msCounter % _1s)) {// 1 seconda
-			secCounter++;
-		  	HAL_GPIO_TogglePin(TIK_LED_GPIO_Port, TIK_LED_Pin);
-#ifdef SET_DISPLAY
-		  	if (startSec) putEvt(evt_Sec);
-#endif
-	  	}
-	}
-#ifdef SET_IRED
-	else
-	if (htim->Instance == TIM6) {
-		uint8_t irdata = RECIV_PIN; // пин для приёма
-		irparams.timer++;  // One more 50uS tick
-		if (irparams.rawlen >= RAWBUF) irparams.rcvstate = STATE_OVERFLOW;  // Buffer overflow
-
-		switch (irparams.rcvstate) {
-			case STATE_IDLE: // In the middle of a gap
-				if (irdata == MARK) {
-					if (irparams.timer < GAP_TICKS) { // Not big enough to be a gap.
-						irparams.timer = 0;
-					} else {
-						// Gap just ended; Record duration; Start recording transmission
-						irparams.overflow = 0;
-						irparams.rawlen  = 0;
-						irparams.rawbuf[irparams.rawlen++] = irparams.timer;
-						irparams.timer = 0;
-						irparams.rcvstate = STATE_MARK;
-					}
-				}
-			break;
-			case STATE_MARK:  // Timing Mark
-				if (irdata == SPACE) {// Mark ended; Record time
-					irparams.rawbuf[irparams.rawlen++] = irparams.timer;
-					irparams.timer = 0;
-					irparams.rcvstate = STATE_SPACE;
-				}
-			break;
-			case STATE_SPACE:  // Timing Space
-				if (irdata == MARK) {// Space just ended; Record time
-					irparams.rawbuf[irparams.rawlen++] = irparams.timer;
-					irparams.timer = 0;
-					irparams.rcvstate = STATE_MARK;
-				} else if (irparams.timer > GAP_TICKS) {// Space
-					irparams.rcvstate = STATE_STOP;
-				}
-			break;
-			case STATE_STOP:  // Waiting; Measuring Gap
-			 	if (irdata == MARK) irparams.timer = 0;  // Reset gap timer
-			break;
-			case STATE_OVERFLOW:  // Flag up a read overflow; Stop the State Machine
-				irparams.overflow = 1;
-				irparams.rcvstate = STATE_STOP;
-			break;
-		}
-		//
-	}
-#endif
-}
-//--------------------------------------------------------------------------------------------
-
+//-------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
@@ -2285,38 +1541,33 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 #if defined(SET_BLE) || defined(SET_AUDIO)
 	if (huart->Instance == USART3) {
-		/*if ((rxbByte > 0x0D) && (rxbByte < 0x80)) {
-			if (rxbByte >= 0x20) adone = 1;
-			if (adone) rxbBuf[rxbInd++] = (char)rxbByte;
-		}*/
-		//if (adone) {
-			rxbBuf[rxbInd++] = (char)rxbByte;
-			if (rxbByte == 0x0a) {// '\n'
-				rxbBuf[--rxbInd] = '\0';
-				if (bleQueAckFlag) {
-					/*int len = strlen(rxbBuf);
-					// Блок помещает в очередь ответов на команду очередное сообщение от модуля BLE
-					if (len > 1) {
-						char *from = (char *)calloc(1, len + 1);
-						if (from) {
-							strncpy(from, rxbBuf, len);
-							if (putRECQ(from, &bleQueAck) < 0) {
-								devError |= devQUE;
-								free(from);
-							} else {
-								if (devError & devQUE) devError &= ~devQUE;
-							}
-						} else {
-							devError |= devMEM;
-						}
-					}*/
-					//-----------------------------------------------------------------------------
+		rxbBuf[rxbInd++] = (char)rxbByte;
+		if (rxbByte == 0x0a) {// '\n'
+			rxbBuf[--rxbInd] = '\0';
+			int len = strlen(rxbBuf);
+			// Блок помещает в очередь ответов на команду очередное сообщение от модуля BLE
+			if (len > 1) {
+				char *from_audio = (char *)calloc(1, MAX_BLE_BUF);//len + 1);
+				//char *from_audio = (char *)pvPortMalloc(256);
+				if (from_audio) {
+					strncpy(from_audio, rxbBuf, MAX_BLE_BUF - 1);
+					rec_msg_t ac;
+					ac.msg = from_audio;
+					if (osMessageQueuePut(ackQueHandle, (const void *)&ac, 0, 0) != osOK) {
+						devError |= devQUE;
+						free(from_audio);
+						//vPortFree(from_audio);
+					} else {
+						if (devError & devQUE) devError &= ~devQUE;
+					}
+				} else {
+					devError |= devMEM;
 				}
-				rxbInd = 0;
-				//adone = 0;
-				memset(rxbBuf, 0, sizeof(rxbBuf));
 			}
-		//}
+			//-----------------------------------------------------------------------------
+			rxbInd = 0;
+			memset(rxbBuf, 0, sizeof(rxbBuf));
+		}
 		//
 		if (HAL_UART_Receive_IT(huart, &rxbByte, 1) != HAL_OK) devError |= devBLE;
 	}
@@ -2328,28 +1579,25 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 			rxBuf[--rxInd] = '\0';
 
 			int i, ev = -1;
-			if (strlen(rxBuf) >= 2) {
-//#ifdef SET_SLEEP
-//				start_sleep = get_tmr(WAIT_BEFORE_SLEEP);
-//#endif
+			if (strlen(rxBuf) > 2) {
 #if defined(SET_BLE) || defined(SET_AUDIO)
-				if ( (strstr(rxBuf, "at")) || (strstr(rxBuf, "AT")) ) {
-					if (bleQueCmdFlag) {
-						int len = strlen(rxBuf);
-						// Блок помещает в очередь команд очередную команду модулю BLE
-						char *to = (char *)calloc(1, len + 3);
-						if (to) {
-							memcpy(to, rxBuf, len);
-							toUppers(to);
-							if (putRECQ(to, &bleQueCmd) < 0) {
-								devError |= devQUE;
-								free(to);
-							} else {
-								if (devError & devQUE) devError &= ~devQUE;
-							}
+				if ( (strstr(rxBuf, "at+")) || (strstr(rxBuf, "AT+")) ) {
+					//int len = strlen(rxBuf);
+					// Блок помещает в очередь команд очередную команду модулю BLE
+					char *to_audio = (char *)calloc(1, MAX_BLE_BUF);
+					if (to_audio) {
+						strncpy(to_audio, rxBuf, MAX_BLE_BUF - 1);
+						toUppers(to_audio);
+						rec_msg_t cd;
+						cd.msg = to_audio;
+						if (osMessageQueuePut(cmdQueHandle, (const void *)&cd, 0, 0) != osOK) {
+							devError |= devQUE;
+							free(to_audio);
 						} else {
-							devError |= devMEM;
+							if (devError & devQUE) devError &= ~devQUE;
 						}
+					} else {
+						devError |= devMEM;
 					}
 					ev = -2;
 				} else {
@@ -2415,6 +1663,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 								case cmdWakeUp://"wakeup"
 								case cmdSleep://"sleep" -> goto sleep mode
 								case cmdRds://"rds"
+								case cmdEvt://"qevt"
+								case cmdAck://"qack"
+								case cmdCmd://"qcmd"
 									ev = i;
 								break;
 								case cmdEpoch://"epoch:1657191323"
@@ -2487,7 +1738,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 				//
 				if (ev != -2) {
 					if (ev == -1) ev = cmdErr;
-					putEvt(ev);
+					if (osMessageQueuePut(evtQueHandle, (const void *)&ev, 0, 0) != osOK) devError |= devEVT;
 				}
 				//
 			}
@@ -2575,7 +1826,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 				(HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_SET)) {
 			sleep_mode = false;
 			HAL_PWR_DisableSleepOnExit();
-			putEvt(cmdExitSleep);
+			int ev = cmdExitSleep;
+			if (osMessageQueuePut(evtQueHandle, (const void *)&ev, 0, 0)) devError |= devEVT;
 		}
 		return;
 	}
@@ -2584,7 +1836,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 		if (GPIO_Pin == KEY0_Pin) seek_up = 1;
 		else
 		if (GPIO_Pin == KEY1_Pin) seek_up = 0;
-		putEvt(cmdScan);
+		int ev = cmdScan;
+		if (osMessageQueuePut(evtQueHandle, (const void *)&ev, 0, 0)) devError |= devEVT;
 	}
 }
 //--------------------------------------------------------------------------------------------
@@ -2651,7 +1904,878 @@ int main ()
 }
 *********************************************************************************************/
 
+void irdTask(void *argument)
+{
+#ifdef SET_IRED
+
+bool ep_start = false;
+char ep_str[16] = {0};
+uint32_t ep_tmr = 0;
+uint32_t tmr_ired = 0;
+enIntIRED();
+
+  while (!restart) {
+
+	if (!tmr_ired) {
+		if (decodeIRED(&results)) {
+
+			tmr_ired = get_mstmr(_180ms);
+			HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
+			int8_t kid = -1;
+			for (int8_t i = 0; i < MAX_IRED_KEY; i++) {
+				if (results.value == keyAll[i].code) {
+					kid = i;
+					break;
+				}
+			}
+			//
+			if (kid == -1) sprintf(stline, "CODE:%08lX", results.value);
+					  else sprintf(stline, "irKEY: %s", keyAll[kid].name);
+			Report(1, "[que:%u] %s\r\n", cntEvt, stline);
+			//
+			if (kid != -1) {
+				int ird = evt_None;
+				switch (kid) {
+					case key_ch:
+						ird = evt_Restart;
+					break;
+					case key_ch_plus:
+						seek_up = 1;
+						ird = evt_Scan;
+					break;
+					case key_ch_minus:
+						seek_up = 0;
+						ird = evt_Scan;
+					break;
+					case key_minus:
+						if (Volume) {
+							newVolume = Volume - 1;
+							ird = evt_Vol;
+						}
+					break;
+					case key_plus:
+						if (Volume < 15) {
+							newVolume = Volume + 1;
+							ird = evt_Vol;
+						}
+					break;
+					case key_left:
+						seek_up = 0;
+						ird = evt_List;
+					break;
+					case key_right:
+						seek_up = 1;
+						ird = evt_List;
+					break;
+					case key_eq:// enable/disable print via uart
+						ird = evt_Mute;//evt_Sleep);
+					break;
+					case key_sp:
+						if (!ep_start) {
+							ep_start = true;
+							memset(ep_str, 0, sizeof(ep_str));
+							ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - lfnt->FontHeight, SCREEN_WIDTH - 1, lfnt->FontHeight, PIX_OFF);
+							sprintf(tmp, "Time:");
+							ST7565_Print(0, SCREEN_HEIGHT - lfnt->FontHeight, tmp, lfnt, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
+							ST7565_Update();
+							ep_tmr = get_tmr(20);
+						} else {
+							ep_start = false;
+							ep_tmr = 0;
+							epoch = atoi(ep_str);
+							ird = evt_Epoch;
+						}
+					break;
+					case key_100://bandUp();
+						if (Band < MAX_BAND) {
+							newBand = Band + 1;
+							ird = evt_Band;
+						}
+					break;
+					case key_200://bandDown();
+						if (Band) {
+							newBand = Band - 1;
+							ird = evt_Band;
+						}
+					break;
+					case key_0:
+					case key_1:
+					case key_2:
+					case key_3:
+					case key_4:
+					case key_5:
+					case key_6:
+					case key_7:
+					case key_8:
+					case key_9:
+						if (ep_start) {
+							if (strlen(ep_str) < 10) {
+								char ch = (kid - key_0) + 0x30;
+								sprintf(ep_str+strlen(ep_str), "%c", ch);
+								ST7565_Print(32, SCREEN_HEIGHT - lfnt->FontHeight, ep_str, lfnt, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
+								ST7565_Update();
+								ep_tmr = get_tmr(20);
+							}
+						} else {
+							newFreq = list[kid - key_0 + 2].freq;//for band=2 only !!!
+							ird = evt_Freq;
+						}
+					break;
+				}//switch (kid)
+				if (ird != evt_None) {
+					if (osMessageQueuePut(evtQueHandle, (const void *)&ird, 0, 0) != osOK) devError |= devEVT;
+				}
+			}//if (kid != -1)
+		}//if (decodeIRED(&results))
+	}
+	if (ep_tmr) {
+		if (check_tmr(ep_tmr)) {
+			ep_tmr = 0;
+			ep_start = false;
+		}
+	}
+	if (tmr_ired) {
+		if (check_mstmr(tmr_ired)) {
+			tmr_ired = 0;
+			resumeIRED();
+			HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
+		}
+	}
+
+  }
+
+#endif
+}
+
 /* USER CODE END 4 */
+
+/* USER CODE BEGIN Header_StartTask */
+/**
+  * @brief  Function implementing the defTask thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartTask */
+void StartTask(void *argument)
+{
+  /* USER CODE BEGIN 5 */
+	/* Infinite loop */
+
+
+    Report(1, "[que:%u] Start application ver.%s\r\n", getQueCount(evtQueHandle), ver);
+
+#ifdef SET_W25FLASH
+    chipPresent = W25qxx_Init();
+    uint32_t cid = W25qxx_getChipID();
+    if ( chipPresent && ((cid >= W25Q10) && (cid <= W25Q128)) ) validChipID = true;
+    list_sector = W25qxx_getPageSize() << 1;
+    //
+    listSize = sizeof(rec_t) * MAX_LIST;
+    memset((uint8_t *)&list[0].band, 0, listSize);
+    //
+    cfgSector = W25qxx_getSectorCount() - 1;
+    if (W25qxx_IsEmptySector(cfgSector, 0, listSize)) {//sector is empty -> need write data to sector
+    	if (!(devError & devSPI)) {
+    		W25qxx_WriteSector((uint8_t *)&def_list[0].band, cfgSector, 0, listSize);
+    		Report(1, "Writen cfg_stations_data (%lu bytes) to cfgSector #%lu\r\n", listSize, cfgSector);
+      	}
+    } else {//in sector	present any data
+    	if (!(devError & devSPI)) {
+    		W25qxx_ReadSector((uint8_t *)&list[0].band, cfgSector, 0, listSize);
+    		Report(1, "Readed cfg_stations_data (%lu bytes) from cfgSector #%lu\r\n", listSize, cfgSector);
+      	} else {
+      		memcpy((uint8_t *)&list[0].band, (uint8_t *)&def_list[0].band, listSize);
+      	}
+    }
+#endif
+
+
+#ifdef SET_RDA_CHIP
+    rdaID = rda5807_init(&Freq);
+    RSSI = rda5807_rssi();
+    rda5807_SetVolume(Volume);
+    rda5807_SetBassBoost(BassBoost);
+    stereo = rda5807_Get_StereoMonoFlag();
+    Chan = rda5807_Get_Channel();
+#endif
+
+
+#ifdef SET_DISPLAY
+
+	#ifdef FONT_6x8
+  		FontDef_t Font_6x8 = { 6, 8, Font6x8 };
+  		lfnt = &Font_6x8;
+	#endif
+
+  	uint16_t lin1 = 1;
+  	uint16_t lin2 = lin1 + Font_6x8.FontHeight;//chipID...
+  	uint16_t lin3 = lin2 + Font_6x8.FontHeight + 1;//Band...
+  	uint16_t lin4 = lin3 + Font_6x8.FontHeight + 1;//Volume...//Freq...
+  	uint16_t lin5 = lin4 + Font_6x8.FontHeight + 1;//Freq...//Volume...
+  	uint16_t lin6 = lin5 + Font_6x8.FontHeight + 1;//Station
+  	char st[64];
+  	char sta[32];
+  	char stb[32];
+
+  	ST7565_Reset();
+  	ST7565_Init();
+
+    int dl = sprintf(tmp, "Ver.%s", ver);
+    uint16_t x = ((SCREEN_WIDTH - (lfnt->FontWidth * dl)) >> 1) & 0x7f;
+    ST7565_Print(x, SCREEN_HEIGHT - lfnt->FontHeight, tmp, lfnt, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
+
+	#ifdef SET_RDA_CHIP
+    	int il = sprintf(st, "RDA5807 chipID:0x%x", rdaID);
+    	uint16_t xf = ((SCREEN_WIDTH - (lfnt->FontWidth * il)) >> 1) & 0x7f;
+    	if (!xf) xf = 1;
+    	ST7565_Print(xf, lin2, st, lfnt, 1, PIX_ON);
+
+    	int it = sprintf(stb, "FM Band:%s", allBands[Band]);//(uint16_t)lBand, (uint16_t)rBand);
+    	int lit = it;
+    	xf = ((SCREEN_WIDTH - (lfnt->FontWidth * it)) >> 1) & 0x7f;
+    	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
+    	ST7565_Print(xf, lin3, stb, lfnt, 1, PIX_ON);
+
+    	int im = sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
+    	int lim = im;
+    	xf = ((SCREEN_WIDTH - (lfnt->FontWidth * im)) >> 1) & 0x7f;
+    	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
+    	ST7565_Print(xf, lin4, st, lfnt, 1, PIX_ON);
+
+    	if (stereo)
+    		il = sprintf(st, "Rssi:%u Freq:%.1f S", RSSI, Freq);
+    	else
+    		il = sprintf(st, "Rssi:%u Freq:%.1f", RSSI, Freq);
+    	int lil = il;
+    	xf = ((SCREEN_WIDTH - (lfnt->FontWidth * il)) >> 1) & 0x7f;
+    	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
+    	ST7565_Print(xf, lin5, st, lfnt, 1, PIX_ON);
+
+    	int ia = sprintf(sta, "%s", nameStation(Freq));
+    	int lia = ia;
+    	xf = ((SCREEN_WIDTH - (lfnt->FontWidth * ia)) >> 1) & 0x7f;
+    	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
+    	ST7565_Print(xf, lin6, sta, lfnt, 1, PIX_ON);
+
+    	Report(1, "ChipID:0x%x Chan:%u Freq:%.2f %s RSSI:%u Band:%s Vol:%u BassEn:%u\r\n",
+    			rdaID, Chan, Freq, sta, RSSI, allBands[Band], Volume, BassBoost);
+	#endif
+
+    ST7565_DrawRectangle(0, lfnt->FontHeight, SCREEN_WIDTH - 1, SCREEN_HEIGHT - (lfnt->FontHeight << 1) - 2, PIX_ON);
+    ST7565_DrawFilledRectangle(0, 0, SCREEN_WIDTH - 1, lfnt->FontHeight, PIX_ON);
+    ST7565_Update();
+
+    startSec = true;
+
+#endif
+
+/*
+#ifdef SET_IRED
+    bool ep_start = false;
+    char ep_str[16] = {0};
+    uint32_t ep_tmr = 0;
+	uint32_t tmr_ired = 0;
+	enIntIRED();
+#endif
+*/
+
+	uint16_t lastErr = devOK;
+
+	int evt, ev = evt_Freq;
+	if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 20) != osOK) devError |= devEVT;
+
+    while (!restart) {
+
+/*
+#ifdef SET_IRED
+  		if (!tmr_ired) {
+			if (decodeIRED(&results)) {
+
+				tmr_ired = get_mstmr(_300ms);
+				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
+				int8_t kid = -1;
+				for (int8_t i = 0; i < MAX_IRED_KEY; i++) {
+					if (results.value == keyAll[i].code) {
+						kid = i;
+						break;
+					}
+				}
+				//
+				if (kid == -1) sprintf(stline, "CODE:%08lX", results.value);
+						  else sprintf(stline, "irKEY: %s", keyAll[kid].name);
+				Report(1, "[que:%u] %s\r\n", cntEvt, stline);
+				//
+				if (kid != -1) {
+					int ird = evt_None;
+					switch (kid) {
+						case key_ch:
+							ird = evt_Restart;
+						break;
+						case key_ch_plus:
+							seek_up = 1;
+							ird = evt_Scan;
+						break;
+						case key_ch_minus:
+							seek_up = 0;
+							ird = evt_Scan;
+						break;
+						case key_minus:
+							if (Volume) {
+								newVolume = Volume - 1;
+								ird = evt_Vol;
+							}
+						break;
+						case key_plus:
+							if (Volume < 15) {
+								newVolume = Volume + 1;
+								ird = evt_Vol;
+							}
+						break;
+						case key_left:
+							seek_up = 0;
+							ird = evt_List;
+						break;
+						case key_right:
+							seek_up = 1;
+							ird = evt_List;
+						break;
+						case key_eq:// enable/disable print via uart
+							ird = evt_Mute;//evt_Sleep);
+						break;
+						case key_sp:
+							if (!ep_start) {
+								ep_start = true;
+								memset(ep_str, 0, sizeof(ep_str));
+								ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - Font_6x8.FontHeight, SCREEN_WIDTH - 1, Font_6x8.FontHeight, PIX_OFF);
+								sprintf(tmp, "Time:");
+								ST7565_Print(0, SCREEN_HEIGHT - Font_6x8.FontHeight, tmp, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
+								ST7565_Update();
+								ep_tmr = get_tmr(20);
+							} else {
+								ep_start = false;
+								ep_tmr = 0;
+								epoch = atoi(ep_str);
+								ird = evt_Epoch;
+							}
+						break;
+						case key_100://bandUp();
+							if (Band < MAX_BAND) {
+								newBand = Band + 1;
+								ird = evt_Band;
+							}
+						break;
+						case key_200://bandDown();
+							if (Band) {
+								newBand = Band - 1;
+								ird = evt_Band;
+							}
+						break;
+						case key_0:
+						case key_1:
+						case key_2:
+						case key_3:
+						case key_4:
+						case key_5:
+						case key_6:
+						case key_7:
+						case key_8:
+						case key_9:
+							if (ep_start) {
+								if (strlen(ep_str) < 10) {
+									char ch = (kid - key_0) + 0x30;
+									sprintf(ep_str+strlen(ep_str), "%c", ch);
+									ST7565_Print(32, SCREEN_HEIGHT - Font_6x8.FontHeight, ep_str, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
+									ST7565_Update();
+									ep_tmr = get_tmr(20);
+								}
+							} else {
+									newFreq = list[kid - key_0 + 2].freq;//for band=2 only !!!
+									ird = evt_Freq;
+							}
+						break;
+					}//switch (kid)
+					if (ird != evt_None) {
+						if (osMessageQueuePut(evtQueHandle, (const void *)&ird, prio, 2) != osOK) devError |= devEVT;
+					}
+				}//if (kid != -1)
+			}//if (decodeIRED(&results))
+		}
+  		if (ep_tmr) {
+  			if (check_tmr(ep_tmr)) {
+  				ep_tmr = 0;
+  				ep_start = false;
+  			}
+  		}
+		if (tmr_ired) {
+			if (check_mstmr(tmr_ired)) {
+				tmr_ired = 0;
+				resumeIRED();
+				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
+			}
+		}
+#endif
+*/
+		evt = evt_None;
+		if (osMessageQueueGet(evtQueHandle, &evt, NULL, 1) == osOK) {
+    		cntEvt = getQueCount(evtQueHandle);
+    		if (evt != evt_Sec) {
+    			//Report(1, "[que:%u] get event '%s'\r\n", cntEvt, str_cmds[evt]);
+	#ifdef SET_DISPLAY
+    			ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - lfnt->FontHeight, SCREEN_WIDTH - 1, lfnt->FontHeight, PIX_OFF);
+    			int dl = sprintf(tmp, "evt(%u) : %s", cntEvt, str_cmds[evt]);
+    			int x = ((SCREEN_WIDTH - (lfnt->FontWidth * dl)) >> 1) & 0x7f;
+    			ST7565_Print(x, SCREEN_HEIGHT - lfnt->FontHeight, tmp, lfnt, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
+    			ST7565_Update();
+	#endif
+    		}
+    		switch (evt) {
+    			case evt_Rds:
+    				memset(dataRDS, 0, sizeof(dataRDS));
+    				readyRds = rda5807_Get_RDSData(dataRDS, &syncRds);
+    				sprintf(tmp, "[RDS] ready=%d sync=%d :", readyRds, syncRds);
+    				for (int8_t i = 0; i < sizeof(dataRDS); i++)
+    					sprintf(tmp+strlen(tmp), " %02X", dataRDS[i]);
+    				Report(1, "%s\r\n", tmp);
+    			break;
+    			case evt_SleepCont:
+    				sleep_mode = true;
+    				//
+    				HAL_SuspendTick();
+    				HAL_PWR_EnableSleepOnExit();
+    				HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+    				HAL_ResumeTick();
+    			break;
+    			case evt_Sleep:
+    				Report(1, "Going into SLEEP MODE...\r\n");// in 1 second\r\n");
+	#ifdef SET_BLE
+    				bleWrite("AT+SLEEP1\r\n", 1);
+	#endif
+	#ifdef SET_DISPLAY
+    				ST7565_CMD_DISPLAY(CMD_DISPLAY_OFF);
+	#endif
+    				HAL_Delay(250);
+    				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
+
+    				//putEvt(evt_SleepCont);
+    				ev = evt_SleepCont;
+    				if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
+    			break;
+    			case evt_ExitSleep:
+    				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
+	#ifdef SET_DISPLAY
+    				ST7565_CMD_DISPLAY(CMD_DISPLAY_ON);
+	#endif
+	#ifdef SET_BLE
+    				bleWakeUp();//putEvt(evt_WakeUp);
+	#endif
+    				Report(1, "Exit from SLEEP MODE\r\n");
+    			break;
+    			case evt_WakeUp:
+	#ifdef SET_BLE
+    				bleWakeUp();
+	#endif
+    			break;
+    			case evt_Band:
+    				Band = newBand;
+    				if (!rda5807_Set_Band(Band)) {
+    					sprintf(stb, "FM Band:%s", allBands[Band]);//(uint16_t)lBand, (uint16_t)rBand);
+    					showLine(stb, lin3, &lit, true);
+    					Report(1, "[que:%u] set new band=%u '%s'\r\n", cntEvt, Band, allBands[Band]);
+    					if (next_evt == evt) {
+    						if ((Freq < lBand) || (Freq > rBand)) {
+    							newFreq = lBand;
+    							//putEvt(evt_Freq);
+    							ev = evt_Freq;
+    							if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
+    						}
+    					} else {
+    						next_evt = evt;
+    						//putEvt(evt_Freq);
+    						ev = evt_Freq;
+    						if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
+    					}
+    				}
+    			break;
+    			case evt_Cfg:
+    				showCfg();
+    			break;
+    			case evt_List:
+    				next_evt = evt_Freq;
+    				newFreq = getNextList(Freq, seek_up, &newBand);
+					if (newBand == Band) {
+						Report(1, "Band = newBand = %u -> goto set newFreq to %.1f (up = %u)\r\n", newBand, newFreq, seek_up);
+    					//putEvt(evt_Freq);
+						ev = evt_Freq;
+    					if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
+					} else {
+						Report(1, "Band = %u -> goto set newBand to %u (newFreq to %.1f up = %u)\r\n", Band, newBand, newFreq, seek_up);
+    					//putEvt(evt_Band);
+						ev = evt_Band;
+						if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
+					}
+    			break;
+    			case evt_Bass:
+    				if (newBassBoost != BassBoost) {
+    					BassBoost = newBassBoost;
+    					rda5807_SetBassBoost(BassBoost);
+    					//
+    					if (noMute)
+    						sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
+    					else
+    						sprintf(st, "Bass:%u Vol:%u M", BassBoost, Volume);
+    					showLine(st, lin4, &lim, true);
+    					Report(1, "[que:%u] set new BassBoost to %u\r\n", cntEvt, BassBoost);
+    				}
+    			break;
+    			case evt_Vol:
+    				if (newVolume != Volume) {
+    					Volume = newVolume;
+    					rda5807_SetVolume(Volume);
+    					//
+    					if (noMute)
+    						sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
+    					else
+    						sprintf(st, "Bass:%u Vol:%u M", BassBoost, Volume);
+    					showLine(st, lin4, &lim, true);
+    					Report(1, "[que:%u] set new Volume to %u\r\n", cntEvt, Volume);
+    				}
+    			break;
+    			case evt_Mute:
+    				noMute = (~noMute) & 1;
+    				rda5807_Set_Mute(noMute);
+    				//
+    				if (noMute)
+    					sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
+    				else
+    					sprintf(st, "Bass:%u Vol:%u M", BassBoost, Volume);
+    				showLine(st, lin4, &lim, true);
+    				Report(1, "[que:%u] set Mute to %u\r\n", cntEvt, (~noMute) & 1);
+    			break;
+    			case evt_Freq:
+    				if ((newFreq >= lBand) && (newFreq <= rBand)) {
+    					if (newFreq != Freq) {
+    						Freq = newFreq;
+    						uint16_t fr = (uint16_t)(Freq * 10);
+    						rda5807_SetFreq_In100Khz(fr);
+    						stereo = rda5807_Get_StereoMonoFlag();
+    						Chan = rda5807_Get_Channel();
+    						//
+    						if (stereo)
+    							sprintf(st, "Rssi:%u Freq:%.1f S", RSSI, Freq);
+    						else
+    							sprintf(st, "Rssi:%u Freq:%.1f", RSSI, Freq);
+    						showLine(st, lin5, &lil, false);
+
+    						sprintf(sta, "%s", nameStation(Freq));
+    						showLine(sta, lin6, &lia, true);
+    						Report(1, "[que:%u] set new Freq to %.1f %s (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
+    					}
+    				}
+				break;
+    			case evt_Scan:
+    				if (!scan) {
+    					scan = 1;
+    					rda5807_StartSeek(seek_up);
+    				}
+    			break;
+    			case evt_Ver:
+    				Report(1, "Ver.%s\r\n", ver);
+    			break;
+    			case evt_Sec:
+    			{
+	#ifdef SET_DISPLAY
+    				dl = sec2str(st);
+    				x = ((SCREEN_WIDTH - (lfnt->FontWidth * dl)) >> 1) & 0x7f;
+    				ST7565_Print(x, lin1, st, lfnt, 0, PIX_OFF);
+	#endif
+    				//
+    				if (scan) {
+    					if (rda5807_Get_SeekTuneReadyFlag()) {
+    						Freq = (float)rda5807_GetFreq_In100Khz();
+    						Freq /= 10;
+    						scan = 0;
+    						Chan = rda5807_Get_Channel();
+    						sprintf(sta, "%s", nameStation(Freq));
+    						showLine(sta, lin6, &lia, true);
+    						Report(1, "[que:%u] set new Freq to %.1f %s (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
+    					}
+    				}
+    				//
+    				uint16_t rssi = rda5807_rssi();
+    				if (rssi != RSSI) {
+    					RSSI = rssi;
+    					stereo = rda5807_Get_StereoMonoFlag();
+	#ifdef SET_DISPLAY
+    					if (stereo)
+    						sprintf(st, "Rssi:%u Freq:%.1f S", RSSI, Freq);
+    					else
+    						sprintf(st, "Rssi:%u Freq:%.1f", RSSI, Freq);
+    					showLine(st, lin5, &lil, false);
+
+    					//sprintf(sta, "'%s'", nameStation(Freq));
+    					//showLine(sta, lin6, &lia, true);
+    					////Report(1, "ChipID:0x%x Chan:%u Freq:%.2f RSSI:%u\r\n", rdaID, Chan, Freq, RSSI);
+	#endif
+    				}
+    				//
+    				if (devError) {
+    					dl = sprintf(tmp, "devError : 0x%04X", devError);
+    					lastErr = devError;
+    				} else {
+    					if (lastErr) {
+    						dl = sprintf(tmp, "Ver.%s", ver);
+    						lastErr = devOK;
+    					} else dl = 0;
+    				}
+	#ifdef SET_DISPLAY
+    				if (dl) {
+    					ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - lfnt->FontHeight, SCREEN_WIDTH - 1, lfnt->FontHeight, PIX_OFF);
+    					x = ((SCREEN_WIDTH - (lfnt->FontWidth * dl)) >> 1) & 0x7f;
+    					ST7565_Print(x, SCREEN_HEIGHT - lfnt->FontHeight, tmp, lfnt, 1, PIX_ON);
+    					ST7565_Update();
+    				}
+    				//
+    				ST7565_Update();
+	#endif
+    			}
+    			break;
+    			case evt_Evt:
+    				Report(1, "evtQueue counter : %u\r\n", getQueCount(evtQueHandle));
+    			break;
+    			case evt_Ack:
+    				Report(1, "ackQueue counter : %u\r\n", getQueCount(ackQueHandle));
+    			break;
+    			case evt_Cmd:
+    				Report(1, "cmdQueue counter : %u\r\n", getQueCount(cmdQueHandle));
+    			break;
+    			case evt_Clr:
+    				devError = devOK;
+    				Report(1, "[que:%u] Clear all Errors...\r\n", cntEvt);
+    			break;
+    			case evt_Help:
+    				stx[0] = '\0';
+    				for (int8_t i = 0; i < MAX_CMDS; i++) sprintf(stx+strlen(stx), "\t%s\r\n", s_cmds[i]);
+    				Report(0, "%s", stx);
+    			break;
+    			case evt_Restart:
+    				restart = 1;
+    				Report(1, "[que:%u] Restart system...\r\n", cntEvt);
+    			break;
+    			case evt_Epoch:
+    				set_Date(epoch);
+    				Report(1, "[que:%u] Set Unix TimeStamp to %lu\r\n", cntEvt, epoch);
+    			break;
+    			case evt_Err:
+    				Report(1, "[que:%u] Error input from uart\r\n", cntEvt);
+    			break;
+	#ifdef SET_W25FLASH
+    			case evt_sRead:
+    			case evt_sNext:
+    			{
+    				uint32_t w25_adr = (adr_sector * W25qxx_getSectorSize()) + offset_sector;
+    				uint32_t dlin = list_sector;
+    				int step = 32;
+    				uint32_t ind = 0;
+    				W25qxx_ReadSector(fs_work, adr_sector, offset_sector, dlin);
+    				Report(0, "Read sector:%d offset:%d len:%u\r\n", adr_sector, offset_sector, dlin);
+    				while (ind < dlin) {
+    					strf[0] = '\0';
+    					while (1) {
+    						sprintf(strf+strlen(strf), "%06X ", (unsigned int)w25_adr);
+    						for (int i = 0; i < step; i++) sprintf(strf+strlen(strf), " %02X", fs_work[i + ind]);
+    						strcat(strf, "\r\n");
+    						w25_adr += step;
+    						ind += step;
+    						if (!(ind % W25qxx_getPageSize())) break;
+    					}
+    					Report(0, "%s", strf);
+    				}
+    			}
+    			break;
+    			case evt_sWrite:
+    			{
+    				uint32_t ss = W25qxx_getSectorSize();
+    				if (!W25qxx_IsEmptySector(adr_sector, 0, ss)) W25qxx_EraseSector(adr_sector);
+    				memset(fs_work, byte_write, ss);
+    				if (len_write != -1) ss = len_write;
+    				W25qxx_WriteSector(fs_work, adr_sector, offset_sector, ss);
+    				Report(0, "Fill sector:%d byte:%02X len:%d done\r\n", adr_sector, byte_write, ss);
+    			}
+    			break;
+    			case evt_sErase:
+    				if (adr_sector == -1) {
+    					Report(1, "Erase flash");
+    					flag_sector = true;
+    					btime = HAL_GetTick();
+    				} else {
+    					W25qxx_EraseSector(adr_sector);
+    					Report(1, "Erase sector:%d done\r\n", adr_sector);
+    				}
+    			break;
+	#endif
+    		}
+    		if ((evt >= evt_sRead) && (evt <= evt_sWrite)) {
+    			last_cmd_sector =  evt;//cmd_sector;
+    			cmd_sector = sNone;
+    		}
+    	}//evtQueueGet(....)
+
+
+#ifdef SET_W25FLASH
+    	if (flag_sector) {
+    		adr_sector++;
+    		if (adr_sector >= W25qxx_getSectorCount()) {
+    			flag_sector = false;
+    			etime = HAL_GetTick();
+    			Report(0, " done (%lu sec)\r\n", (etime - btime) / 1000);
+    		} else {
+    			//putEvt(evt_sErase);
+    			W25qxx_EraseSector(adr_sector);
+    			if (!(adr_sector % 8)) Report(0, ".");
+    		}
+    	}
+#endif
+
+
+#if defined(SET_BLE) || defined(SET_AUDIO)
+    	if (ackQueHandle) {
+    		if (!osMessageQueueGet(ackQueHandle, (void *)&_ack, NULL, 1)) {
+    			if (_ack.msg) {
+    				strcpy(bleRxBuf, _ack.msg);
+    				free(_ack.msg);
+    				//vPortFree(_ack.msg);
+    				Report(1, "[BLE_rx] %s\r\n", bleRxBuf);
+    			}
+    		}
+    	}
+    	if (cmdQueHandle) {
+    		if (!osMessageQueueGet(cmdQueHandle, (void *)&_cmd, NULL, 1)) {
+    			if (_cmd.msg) {
+    				strcpy(bleBuf, _cmd.msg);
+    				free(_cmd.msg);
+    				strcat(bleBuf, "\r\n");
+    				bleWrite(bleBuf, 1);
+    			}
+    		}
+    	}
+#endif
+    	//
+    	//
+    	//
+    	if (devError) {
+    		errLedOn(true);
+    		HAL_Delay(50);
+    		errLedOn(false);
+    		if (last_devError != devError) {
+    			last_devError = devError;
+    			tmp[0] = '\0';
+    			uint16_t er = 0;
+    			for (int8_t i = 0; i < MAX_ERR_CODE; i++) {
+    				er = devError & all_devErr[i];
+    				if (er) sprintf(tmp+strlen(tmp), " '%s'", errName(er));
+    			}
+    			Report(1, "Error 0x%04X %s\r\n", devError, tmp);
+    		}
+    	} else {
+    		if (HAL_GPIO_ReadPin(ERR_LED_GPIO_Port, ERR_LED_Pin)) errLedOn(false);
+    	}
+    	//
+    	//
+    	//
+    }//while (!restart)
+
+    Report(1, "[que:%u] Stop application...\r\n", cntEvt);
+
+    HAL_Delay(250);
+
+    NVIC_SystemReset();
+
+
+  /* USER CODE END 5 */
+}
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM1 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM1) {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+	else
+	if (htim->Instance == TIM4) {
+		msCounter++;//inc_msCounter();
+		if (!(msCounter % _1s)) {// 1 seconda
+			secCounter++;
+		  	HAL_GPIO_TogglePin(TIK_LED_GPIO_Port, TIK_LED_Pin);
+#ifdef SET_DISPLAY
+		  	if (startSec) {
+		  		int ev = evt_Sec;
+		  		if (osMessageQueuePut(evtQueHandle, (const void *)&ev, 0, 0) != osOK) devError |= devEVT;
+		  	}
+#endif
+	  	}
+	}
+#ifdef SET_IRED
+	else
+	if (htim->Instance == TIM6) {
+		uint8_t irdata = RECIV_PIN; // пин для приёма
+		irparams.timer++;  // One more 50uS tick
+		if (irparams.rawlen >= RAWBUF) irparams.rcvstate = STATE_OVERFLOW;  // Buffer overflow
+
+		switch (irparams.rcvstate) {
+			case STATE_IDLE: // In the middle of a gap
+				if (irdata == MARK) {
+					if (irparams.timer < GAP_TICKS) { // Not big enough to be a gap.
+						irparams.timer = 0;
+					} else {
+						// Gap just ended; Record duration; Start recording transmission
+						irparams.overflow = 0;
+						irparams.rawlen  = 0;
+						irparams.rawbuf[irparams.rawlen++] = irparams.timer;
+						irparams.timer = 0;
+						irparams.rcvstate = STATE_MARK;
+					}
+				}
+			break;
+			case STATE_MARK:  // Timing Mark
+				if (irdata == SPACE) {// Mark ended; Record time
+					irparams.rawbuf[irparams.rawlen++] = irparams.timer;
+					irparams.timer = 0;
+					irparams.rcvstate = STATE_SPACE;
+				}
+			break;
+			case STATE_SPACE:  // Timing Space
+				if (irdata == MARK) {// Space just ended; Record time
+					irparams.rawbuf[irparams.rawlen++] = irparams.timer;
+					irparams.timer = 0;
+					irparams.rcvstate = STATE_MARK;
+				} else if (irparams.timer > GAP_TICKS) {// Space
+					irparams.rcvstate = STATE_STOP;
+				}
+			break;
+			case STATE_STOP:  // Waiting; Measuring Gap
+			 	if (irdata == MARK) irparams.timer = 0;  // Reset gap timer
+			break;
+			case STATE_OVERFLOW:  // Flag up a read overflow; Stop the State Machine
+				irparams.overflow = 1;
+				irparams.rcvstate = STATE_STOP;
+			break;
+		}
+		//
+	}
+#endif
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
