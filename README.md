@@ -1,12 +1,14 @@
 # stm32l4_FMradio
 
-STM32L476RGT6 board with spi_flash W25X16 + RDA5807 + display GMG12864-06D + audio amplifier XY-SP5W + ble JDY-25M
+STM32L476RGT6 board with flash W25X16 + RDA5807 + display GMG12864 + audio amplifier XY-SP5W + KCX_BT_EMITTER
 
 #########################################################
 #
 #                  Project FM_Radio+
 # STM32L476RGT6 board with spi_flash W25X16(2Mb) + RDA5807 +
-# LCD GMG12864-06D + audio amplifier XY-SP5W + BLE JDY-25M
+# LCD GMG12864-06D + audio amplifier XY-SP5W +
+# TL1838 Infrared Receiver +
+# KCX_BT_EMITTER bluetooth audio transmitter
 #
 #########################################################
 
@@ -21,6 +23,7 @@ STM32L476RGT6 board with spi_flash W25X16 + RDA5807 + display GMG12864-06D + aud
 * JDY-25M - BLE device (UART + DMA + GPIO)
 * XY-SP5W - аудио усилитель + динамик (8ом 3Вт)
 * TL1838 Infrared Receiver
+* KCX_BT_EMITTER bluetooth audio transmitter
 ```
 
 
@@ -43,14 +46,14 @@ STM32L476RGT6 board with spi_flash W25X16 + RDA5807 + display GMG12864-06D + aud
 * ПО реализовано средствами разработки STM32CubeIDE.
 * Устройство инициализирует некоторые интерфейсы микроконтроллера :
   - GPIO : подключены два сетодиода : PA1 - секундный тик, PC3 - индикатор ошибки на устройстве,
-           а также несколько других пинов для обслуживания W25X16, GMG12864, JDY-25M, TL1838;
+           а также несколько других пинов для обслуживания W25X16, GMG12864, TL1838;
            в том числе три пользовательские кнопки KEY0(PC1), KEY1(PC2), WAKEUP(PA0) на плате микроконтроллера.
   - I2C1 : режим мастера с частотой 100Кгц (шина ослуживает радио-чип RDA5807).
   - USART2 : параметры порта 230400 8N1 - порт для логов и передачи команд устройству.
-  - USART3 : параметры порта 115200 8N1 - порт для обслуживания модудя JDY-25M.
+  - USART3 : параметры порта 115200 8N1 - порт для обслуживания bluetooth модуля KCX_BT_EMITTER.
   - TIM4 : таймер-счетчик временных интервалов в 10 мс., реализован в callback-функции.
-  - TIM6 : таймер с интервалом 50 микросекунд для приема данных от инфракрасного датчика.
-  - SPI1 : обслуживает дисплей GMG12864.
+  - TIM6 : таймер с интервалом 50 микросекунд для приема данных от инфракрасного приемника TL1838.
+  - SPI1 : обслуживает дисплей GMG12864-06D.
   - SPI2 : обслуживает чип flash-памяти W25X16.
 * Прием данных по последовательному порту (USART2) выполняется в callback-функции обработчика прерывания.
 
@@ -70,9 +73,9 @@ STM32L476RGT6 board with spi_flash W25X16 + RDA5807 + display GMG12864-06D + aud
 
 
 ```
-28.07 13:32:42 | [que:0] Start application ver.1.5.3 28.07.22
-28.07 13:32:42 | w25qxx Init Begin... Chip ID:0x3015
-28.07 13:32:42 | Chip W25Q16
+03.08 20:28:55 | [que:0] Start application ver.1.8 03.08.22
+03.08 20:28:55 | w25qxx Init Begin... Chip ID:0x3015
+03.08 20:28:55 | Chip W25Q16
         Page Size:      256 bytes
         Page Count:     8192
         Sector Size:    4096 bytes
@@ -80,14 +83,12 @@ STM32L476RGT6 board with spi_flash W25X16 + RDA5807 + display GMG12864-06D + aud
         Block Size:     65536 bytes
         Block Count:    32
         Capacity:       2048 KBytes
-28.07 13:32:42 | Readed cfg_stations_data (900 bytes) from cfgSector #511
-28.07 13:32:42 | ChipID:0x58 Chan:0 Freq:76.00 ??? RSSI:25 Band:76-108 MHz Vol:8 BassEn:0
-28.07 13:32:42 | [BLE] AT+RESET
-28.07 13:32:42 | [BLE] stat(0) 'Disconnected'
-28.07 13:32:42 | [que:0] get event 'setFreq'
-28.07 13:32:42 | [que:0] set new Freq to 95.1 Вести_ФМ (Chan:191)
-28.07 13:32:43 | [BLE] OK
-28.07 13:32:44 | [BLE] +JDY-25M-START
+03.08 20:28:55 | Readed cfg_stations_data (900 bytes) from cfgSector #511
+03.08 20:28:55 | ChipID:0x58 Chan:180 Freq:94.00 Комеди_Радио RSSI:26 Band:76-108 MHz Vol:8 BassEn:0
+03.08 20:28:56 | [que:0] set new Freq to 95.1 Вести_ФМ (Chan:191)
+03.08 20:28:58 | [BLE_rx] ALL Devices=0
+03.08 20:29:10 | [BLE_rx] ALL Devices=0
+03.08 20:29:22 | [BLE_rx] ALL Devices=0
 ```
 
 
@@ -95,12 +96,10 @@ STM32L476RGT6 board with spi_flash W25X16 + RDA5807 + display GMG12864-06D + aud
 
 ```
 ver
-28.07 13:58:45 | [que:0] get event 'Version'
-28.07 13:58:45 | Ver.1.5.3 28.07.22
+03.08 20:30:12 | Ver.1.8 03.08.22
 
 
 help
-28.07 13:59:39 | [que:0] get event 'Help'
         help
         restart
         epoch:
@@ -123,71 +122,61 @@ help
         wakeup
         exitsleep
         sleep
+        sleepcont
+        rds
+        qevt
+        qack
+        qcmd
 
 
-epoch:1659035880
-28.07 14:00:44 | [que:0] get event 'Epoch'
-28.07 19:18:00 | [que:0] Set Unix TimeStamp to 1659035880
+epoch:1659563875
+03.08 21:57:55 | [que:0] Set Unix TimeStamp to 1659563875
 
 
 scan
-28.07 19:18:38 | [que:0] get event 'Scan'
-28.07 19:18:39 | [que:0] set new Freq to 96.3 Русское_Радио (Chan:203)
-scan:down
-28.07 19:19:03 | [que:0] get event 'Scan'
-28.07 19:19:04 | [que:0] set new Freq to 95.1 Вести_ФМ (Chan:191)
+03.08 21:58:44 | [que:0] set new Freq to 96.3 Русское_Радио (Chan:203)
+scan:0
+03.08 21:58:50 | [que:0] set new Freq to 95.1 Вести_ФМ (Chan:191)
 
 
 list
-28.07 19:19:36 | [que:0] get event 'nextStation'
-28.07 19:19:36 | [getNextList] up=1 ik=5, fr=95.1 ret=95.5 band=2
-28.07 19:19:36 | Band = newBand = 2 -> goto set newFreq to 95.5 (up = 1)
-28.07 19:19:36 | [que:0] get event 'setFreq'
-28.07 19:19:36 | [que:0] set new Freq to 95.5 Ретро_ФМ (Chan:195)
+03.08 21:59:35 | [getNextList] up=1 ik=5, fr=95.1 ret=95.5 band=2
+03.08 21:59:35 | Band = newBand = 2 -> goto set newFreq to 95.5 (up = 1)
+03.08 21:59:35 | [que:0] set new Freq to 95.5 Ретро_ФМ (Chan:195)
 list:down
-28.07 19:20:13 | [que:0] get event 'nextStation'
-28.07 19:20:13 | [getNextList] up=0 ik=4, fr=95.5 ret=95.1 band=2
-28.07 19:20:13 | Band = newBand = 2 -> goto set newFreq to 95.1 (up = 0)
-28.07 19:20:13 | [que:0] get event 'setFreq'
-28.07 19:20:13 | [que:0] set new Freq to 95.1 Вести_ФМ (Chan:191)
+03.08 21:59:40 | [getNextList] up=0 ik=4, fr=95.5 ret=95.1 band=2
+03.08 21:59:40 | Band = newBand = 2 -> goto set newFreq to 95.1 (up = 0)
+03.08 21:59:40 | [que:0] set new Freq to 95.1 Вести_ФМ (Chan:191)
 
 
-vol:12
-28.07 19:21:26 | [que:0] get event 'Volume'
-28.07 19:21:26 | [que:0] set new Volume to 12
+vol:10
+03.08 22:00:20 | [que:0] set new Volume to 10
 
 
 mute
-28.07 19:22:02 | [que:0] get event 'muteRadio'
-28.07 19:22:02 | [que:0] set Mute to 1
+03.08 22:00:47 | [que:0] set Mute to 1
 mute
-28.07 19:22:21 | [que:0] get event 'muteRadio'
-28.07 19:22:21 | [que:0] set Mute to 0
+03.08 22:00:50 | [que:0] set Mute to 0
 
-
+band:3
+03.08 22:01:57 | [que:0] set new band=3 '65-76 MHz'
 band:2
-28.07 19:23:45 | [que:0] get event 'Band'
-28.07 19:23:45 | [que:0] set new band=2 '76-108 MHz'
+03.08 22:02:03 | [que:0] set new band=2 '76-108 MHz'
 
 
 freq:102.5
-28.07 19:24:17 | [que:0] get event 'setFreq'
-28.07 19:24:18 | [que:0] set new Freq to 102.5 Маяк (Chan:265)
+03.08 22:02:44 | [que:0] set new Freq to 102.5 Маяк (Chan:265)
+freq:95.1
+03.08 22:02:58 | [que:0] set new Freq to 95.1 Вести_ФМ (Chan:191)
 
 
 sleep
-28.07 19:25:06 | [que:0] get event 'Sleep'
-28.07 19:25:06 | Going into SLEEP MODE...
-28.07 19:25:06 | [BLE] AT+SLEEP1
-28.07 19:25:06 | [BLE] +SLEEP
+03.08 22:03:30 | Going into SLEEP MODE...
 ...
-28.07 19:25:32 | [que:1] get event 'ExitSleep'
-28.07 19:25:32 | Exit from SLEEP MODE
-28.07 19:25:32 | [BLE] +WAKE
+03.08 22:03:34 | Exit from SLEEP MODE
 
 
 read:511
-28.07 19:27:04 | [que:0] get event 'spiRead'
 Read sector:511 offset:0 len:512
 1FF000  03 00 00 89 42 D0 9C D0 B0 D1 8F D0 BA 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 1FF020  00 00 00 00 03 33 33 90 42 D0 A8 D0 B0 D0 BD D1 81 D0 BE D0 BD 00 00 00 00 00 00 00 00 00 00 00
@@ -206,7 +195,6 @@ Read sector:511 offset:0 len:512
 1FF1C0  B8 D0 B9 5F D0 9A D1 80 D0 B0 D0 B9 00 00 00 00 00 00 00 00 02 CD CC C9 42 D0 9C D0 BE D0 BD D1
 1FF1E0  82 D0 B5 2D D0 9A D0 B0 D1 80 D0 BB D0 BE 00 00 00 00 00 00 00 00 00 00 02 9A 99 CA 42 D0 9D D0
 next
-28.07 19:27:07 | [que:0] get event 'spiNext'
 Read sector:511 offset:512 len:512
 1FF200  B0 D1 88 D0 B5 5F D0 A0 D0 B0 D0 B4 D0 B8 D0 BE 00 00 00 00 00 00 00 00 00 00 00 00 02 9A 99 CB
 1FF220  42 D0 91 D0 B8 D0 B7 D0 BD D0 B5 D1 81 5F D0 A4 D0 9C 00 00 00 00 00 00 00 00 00 00 00 00 00 00
@@ -226,32 +214,7 @@ Read sector:511 offset:512 len:512
 1FF3E0  FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF
 
 
-restart
-28.07 19:28:21 | [que:0] get event 'Restart'
-28.07 19:28:21 | [que:0] Restart system...
-28.07 19:28:21 | [que:0] Stop application...
-28.07 13:32:42 | [que:0] Start application ver.1.5.3 28.07.22
-28.07 13:32:42 | w25qxx Init Begin... Chip ID:0x3015
-28.07 13:32:42 | Chip W25Q16
-        Page Size:      256 bytes
-        Page Count:     8192
-        Sector Size:    4096 bytes
-        Sector Count:   512
-        Block Size:     65536 bytes
-        Block Count:    32
-        Capacity:       2048 KBytes
-28.07 13:32:42 | Readed cfg_stations_data (900 bytes) from cfgSector #511
-28.07 13:32:42 | ChipID:0x58 Chan:0 Freq:76.00 ??? RSSI:24 Band:76-108 MHz Vol:8 BassEn:0
-28.07 13:32:42 | [BLE] AT+RESET
-28.07 13:32:42 | [BLE] stat(0) 'Disconnected'
-28.07 13:32:42 | [que:0] get event 'setFreq'
-28.07 13:32:42 | [que:0] set new Freq to 95.1 Вести_ФМ (Chan:191)
-28.07 13:32:43 | [BLE] OK
-28.07 13:32:44 | [BLE] +JDY-25M-START
-
-
 cfg
-28.07 13:39:34 | [que:0] get event 'cfgStations'
 3:68.5:Маяк
 3:72.1:Шансон
 2:93.6:Радио_7
@@ -308,7 +271,7 @@ devTIK = 1,
 devUART = 2,
 devMEM = 4,
 devRTC = 8,
-devFIFO = 0x10,
+devEVT = 0x10,
 devSYS = 0x20,
 devSPI = 0x40,
 devLCD = 0x80,
