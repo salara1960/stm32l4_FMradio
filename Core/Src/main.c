@@ -68,7 +68,7 @@ DMA_HandleTypeDef hdma_usart3_tx;
 osThreadId_t defTaskHandle;
 const osThreadAttr_t defTask_attributes = {
   .name = "defTask",
-  .stack_size = 1024 * 4,
+  .stack_size = 2048 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for evtQue */
@@ -87,7 +87,7 @@ const osMessageQueueAttr_t ackQue_attributes = {
   .name = "ackQue"
 };
 /* Definitions for itSem */
-osSemaphoreId_t itSemHandle = NULL;
+osSemaphoreId_t itSemHandle;
 const osSemaphoreAttr_t itSem_attributes = {
   .name = "itSem"
 };
@@ -123,13 +123,14 @@ const osSemaphoreAttr_t itSem_attributes = {
 //const char *ver = "1.7 01.08.22";// remove BLE and add bluetooth_audio device
 //const char *ver = "1.7.1 02.08.22";// fixed minor bug in add to queue record
 //const char *ver = "1.7.2 03.08.22";
-const char *ver = "1.8 03.08.22";// add FreeRTOS
+//const char *ver = "1.8 03.08.22";// add FreeRTOS
+const char *ver = "1.8.1 04.08.22";// minor changes in callback_timer_6 (support infrared)
 
 
 osThreadId_t irdTaskHandle;
 const osThreadAttr_t irdTask_attributes = {
   .name = "irdTask",
-  .stack_size = 512 * 4,
+  .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityBelowNormal7,//osPriorityNormal,
 };
 
@@ -174,7 +175,8 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1659558535;//1659552520;//1659535529;//1659476485;//1659465512;//1659390226;//1659381664;
+static uint32_t epoch = 1659624810;
+//1659614411;//1659558535;//1659552520;//1659535529;//1659476485;//1659465512;//1659390226;//1659381664;
 //1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
 //1658587329;//1658581090;//1658579999;//1658573857;//1658529249;//1658521643;//1658501279;
@@ -281,7 +283,7 @@ uint8_t spiRdy = 1;
 	uint8_t rdaID = 0;
 	volatile uint8_t scan = 0;
 	volatile uint8_t seek_up = 1;
-	uint8_t Volume = 8;
+	uint8_t Volume = 5;
 	uint8_t newVolume = 5;
 	uint8_t BassBoost = 0;
 	uint8_t newBassBoost = 0;
@@ -392,6 +394,7 @@ uint8_t spiRdy = 1;
 #endif
 
 uint8_t prio = 0;
+bool ird_exit = 1;
 
 /* USER CODE END PV */
 
@@ -408,9 +411,9 @@ static void MX_I2C1_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_TIM6_Init(void);
 void StartTask(void *argument);
-void irdTask(void *argument);
 
 /* USER CODE BEGIN PFP */
+void irdTask(void *argument);
 
 uint32_t get_tmr(uint32_t sec);
 bool check_tmr(uint32_t sec);
@@ -611,7 +614,7 @@ int main(void)
 
   /* Create the queue(s) */
   /* creation of evtQue */
-  evtQueHandle = osMessageQueueNew (8, sizeof(int), &evtQue_attributes);
+  evtQueHandle = osMessageQueueNew (8, sizeof(rec_evt_t), &evtQue_attributes);
 
   /* creation of cmdQue */
   cmdQueHandle = osMessageQueueNew (8, sizeof(rec_msg_t), &cmdQue_attributes);
@@ -1908,6 +1911,8 @@ void irdTask(void *argument)
 {
 #ifdef SET_IRED
 
+	ird_exit = 0;
+
 bool ep_start = false;
 char ep_str[16] = {0};
 uint32_t ep_tmr = 0;
@@ -1919,7 +1924,7 @@ enIntIRED();
 	if (!tmr_ired) {
 		if (decodeIRED(&results)) {
 
-			tmr_ired = get_mstmr(_180ms);
+			tmr_ired = get_mstmr(_300ms);
 			HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
 			int8_t kid = -1;
 			for (int8_t i = 0; i < MAX_IRED_KEY; i++) {
@@ -2043,6 +2048,10 @@ enIntIRED();
 	}
 
   }
+
+  ird_exit = 1;
+
+  osThreadExit();
 
 #endif
 }
@@ -2684,9 +2693,12 @@ void StartTask(void *argument)
     	//
     }//while (!restart)
 
+    while (!ird_exit);
+
     Report(1, "[que:%u] Stop application...\r\n", cntEvt);
 
     HAL_Delay(250);
+
 
     NVIC_SystemReset();
 
