@@ -1,16 +1,17 @@
 # stm32l4_FMradio
 
-STM32L476RGT6 board with flash W25X16 + RDA5807 + display GMG12864 + audio amplifier XY-SP5W + KCX_BT_EMITTER
+STM32L476RGT6 board with flash W25X16 + RDA5807 + display GMG12864 + audio amplifier PAM8003 + KCX_BT_EMITTER
 
-#########################################################
+#################################################################
 #
 #                  Project FM_Radio+
-# STM32L476RGT6 board with spi_flash W25X16(2Mb) + RDA5807 +
-# LCD GMG12864-06D + audio amplifier XY-SP5W +
+# STM32L476RGT6 board with spi_flash W25X16(2Mb) + 
+# radio FM chip RDA5807 +
+# LCD GMG12864-06D + audio amplifier PAM8003 +
 # TL1838 Infrared Receiver +
 # KCX_BT_EMITTER bluetooth audio transmitter
 #
-#########################################################
+#################################################################
 
 
 ## Состав рабочего оборудования:
@@ -21,7 +22,7 @@ STM32L476RGT6 board with flash W25X16 + RDA5807 + display GMG12864 + audio ampli
 * RDA5807 - чип радиоприемника FM диапазона 65-108МГц (I2C)
 * GMG12864-06D - LCD дисплей 128x64 (интерфейы SPI + DMA + GPIO)
 * JDY-25M - BLE device (UART + DMA + GPIO)
-* XY-SP5W - аудио усилитель + динамик (8ом 3Вт)
+* PAM8003 - аудио усилитель + динамик (два канала по 8ом 3Вт)
 * TL1838 Infrared Receiver
 * KCX_BT_EMITTER bluetooth audio transmitter
 ```
