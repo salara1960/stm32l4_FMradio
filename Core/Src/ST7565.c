@@ -10,7 +10,7 @@
 uint8_t ST7565_buffer[(SCREEN_WIDTH * SCREEN_HEIGHT) >> 3];
 
 uint8_t with_dma = 0;
-uint8_t lcdRdy = 1;
+volatile uint8_t lcdRdy = 1;
 
 //------------------------------------------------------------------------------
 

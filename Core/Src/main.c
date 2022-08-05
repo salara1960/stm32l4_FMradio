@@ -125,7 +125,7 @@ const osSemaphoreAttr_t itSem_attributes = {
 //const char *ver = "1.7.2 03.08.22";
 //const char *ver = "1.8 03.08.22";// add FreeRTOS
 //const char *ver = "1.8.1 04.08.22";// minor changes in callback_timer_6 (support infrared)
-const char *ver = "1.8.2 05.08.22";
+const char *ver = "1.8.2 05.08.22";//fixed minor error from portBLE at startup (when power on)
 
 
 
@@ -168,10 +168,9 @@ TIM_HandleTypeDef *tikPort = &htim4;
 SPI_HandleTypeDef *portFLASH = &hspi2;
 SPI_HandleTypeDef *portLED = &hspi1;
 I2C_HandleTypeDef *portI2C = &hi2c1;
-
-
 UART_HandleTypeDef *cmdPort = &huart2;
-uint8_t uartRdy = 1;
+
+volatile uint8_t uartRdy = 1;
 uint8_t rxByte = 0;
 uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
@@ -257,7 +256,7 @@ int next_evt = evt_None;
 volatile uint8_t cntEvt = 0;
 
 uint32_t spi_cnt = 0;
-uint8_t spiRdy = 1;
+volatile uint8_t spiRdy = 1;
 //
 #ifdef SET_W25FLASH
 	int adr_sector = 0, offset_sector = 0, list_sector = 0, len_write = 0;
@@ -344,7 +343,8 @@ uint8_t spiRdy = 1;
 
 #if defined(SET_BLE) || defined(SET_AUDIO)
 	UART_HandleTypeDef *blePort = &huart3;
-	uint8_t bleRdy = 1;
+	//
+	volatile uint8_t bleRdy = 1;
 	uint8_t rxbByte = 0;
 	uint16_t rxbInd = 0;
 	char rxbBuf[MAX_BLE_BUF] = {0};
@@ -352,7 +352,7 @@ uint8_t spiRdy = 1;
 	char bleBuf[MAX_BLE_BUF] = {0};
 	char bleRxBuf[MAX_BLE_BUF] = {0};
 	uint8_t ble_withDMA = 1;
-	volatile uint8_t bleReady = 1;
+	//volatile uint8_t bleReady = 1;
 	uint8_t ble_stat = 0;
 	uint8_t adone = 0;
 	//
@@ -577,6 +577,11 @@ int main(void)
 
     if (HAL_TIM_Base_Start_IT(tikPort) != HAL_OK) devError |= devTIK;
 
+    if (HAL_UART_Receive_IT(cmdPort, &rxByte, 1) != HAL_OK) devError |= devUART;
+#if defined(SET_BLE) || defined(SET_AUDIO)
+    if (HAL_UART_Receive_IT(blePort, &rxbByte, 1) != HAL_OK) devError |= devBLE;
+#endif
+
     for (int8_t i = 0; i < 4; i++) {
     	errLedOn(true);
     	HAL_Delay(100);
@@ -584,18 +589,8 @@ int main(void)
     	HAL_Delay(100);
     }
 
-    if (HAL_UART_Receive_IT(cmdPort, &rxByte, 1) != HAL_OK) devError |= devUART;
-#if defined(SET_BLE) || defined(SET_AUDIO)
-    if (HAL_UART_Receive_IT(blePort, &rxbByte, 1) != HAL_OK) devError |= devBLE;
-#endif
-
     set_Date(epoch);
 
-    //HAL_Delay(200);
-
-    //uint16_t lastErr = devOK;
-
-    //putEvt(evt_Freq);
 
   /* USER CODE END 2 */
 
@@ -1564,8 +1559,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 					ac.msg = from_audio;
 					if (osMessageQueuePut(ackQueHandle, (const void *)&ac, 0, 0) != osOK) {
 						devError |= devQUE;
-						free(from_audio);
-						//vPortFree(from_audio);
+						free(from_audio);//vPortFree(from_audio);
 					} else {
 						if (devError & devQUE) devError &= ~devQUE;
 					}

@@ -159,7 +159,7 @@ enum PixelStatus {
 #define CMD_TEST  				0xF0
 
 
-extern uint8_t lcdRdy;
+extern volatile uint8_t lcdRdy;
 
 
 extern void ST7565_Reset();

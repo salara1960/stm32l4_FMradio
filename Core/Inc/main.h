@@ -293,13 +293,13 @@ extern SPI_HandleTypeDef *portFLASH;
 extern SPI_HandleTypeDef *portLED;
 extern I2C_HandleTypeDef *portI2C;
 extern UART_HandleTypeDef *cmdPort;
-extern uint8_t uartRdy;
+extern volatile uint8_t uartRdy;
 extern uint8_t rxByte;
 extern uint16_t rxInd;
 extern char rxBuf[MAX_UART_BUF];
 
 extern uint32_t spi_cnt;
-extern uint8_t spiRdy;
+extern volatile uint8_t spiRdy;
 
 #ifdef SET_RDA_CHIP
 	extern volatile uint8_t i2cRdy;
