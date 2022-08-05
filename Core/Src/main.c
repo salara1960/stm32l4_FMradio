@@ -124,7 +124,9 @@ const osSemaphoreAttr_t itSem_attributes = {
 //const char *ver = "1.7.1 02.08.22";// fixed minor bug in add to queue record
 //const char *ver = "1.7.2 03.08.22";
 //const char *ver = "1.8 03.08.22";// add FreeRTOS
-const char *ver = "1.8.1 04.08.22";// minor changes in callback_timer_6 (support infrared)
+//const char *ver = "1.8.1 04.08.22";// minor changes in callback_timer_6 (support infrared)
+const char *ver = "1.8.2 05.08.22";
+
 
 
 osThreadId_t irdTaskHandle;
@@ -133,7 +135,7 @@ const osThreadAttr_t irdTask_attributes = {
   .stack_size = 1024 * 4,
   .priority = (osPriority_t) osPriorityBelowNormal7,//osPriorityNormal,
 };
-
+bool waitBit = true;
 
 char stx[MAX_UART_BUF] = {0};
 char tmp[128] = {0};
@@ -175,7 +177,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1659624810;
+static uint32_t epoch = 1659702715;//1659624810;
 //1659614411;//1659558535;//1659552520;//1659535529;//1659476485;//1659465512;//1659390226;//1659381664;
 //1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
@@ -206,7 +208,9 @@ const char *s_cmds[MAX_CMDS] = {
 	"list",
 	"band:",
 	"cfg",
+#ifdef SET_BLE
 	"wakeup",
+#endif
 	"exitsleep",
 	"sleep",
 	"sleepcont",
@@ -235,7 +239,9 @@ const char *str_cmds[MAX_CMDS] = {
 	"nextStation",
 	"Band",
 	"cfgStations",
+#ifdef SET_BLE
 	"BleWakeUp",
+#endif
 	"ExitSleep",
 	"Sleep",
 	"SleepCont",
@@ -1663,7 +1669,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 								case cmdMute://"mute"
 								case cmdCfg://"cfg"
 								case cmdRestart://"restart" -> restart = 1;
+#ifdef SET_BLE
 								case cmdWakeUp://"wakeup"
+#endif
 								case cmdSleep://"sleep" -> goto sleep mode
 								case cmdRds://"rds"
 								case cmdEvt://"qevt"
@@ -1845,79 +1853,27 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 }
 //--------------------------------------------------------------------------------------------
 
+//--------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------
 
-//*******************************************************************************************
-
-/*********************************   SLEEP MODE   ***********************************
-uint8_t Rx_data;
-
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-    HAL_UART_Receive_IT(huart, &Rx_data, 1);
-    str = "WakeUP from SLEEP by UART\r\n";
-    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen (str), HAL_MAX_DELAY);
-}
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-    str = "WakeUP from SLEEP by EXTI\r\n";
-    HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen (str), HAL_MAX_DELAY);
-    HAL_PWR_DisableSleepOnExit ();
-}
-
-int main ()
-{
- ......
- ......
- HAL_UART_Receive_IT(&huart2, &Rx_data, 1);
- while (1)
-  {
-	  str = "Going into SLEEP MODE in 5 seconds\r\n";
-	  HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen (str), HAL_MAX_DELAY);
-
-	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 1);
-  	  HAL_Delay(5000);
-
-//    Suspend Tick increment to prevent wakeup by Systick interrupt.
-//	  Otherwise the Systick interrupt will wake up the device within 1ms (HAL time base)
-//
-	  HAL_SuspendTick();
-
-	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, 0);  // Just to indicate that the sleep mode is activated
-
-	  HAL_PWR_EnableSleepOnExit ();
-
-//	  Enter Sleep Mode , wake up is done once User push-button is pressed
-	  HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
-
-
-
-//	  Resume Tick interrupt if disabled prior to sleep mode entry
-	  HAL_ResumeTick();
-
-	  str = "WakeUP from SLEEP\r\n";
-	  HAL_UART_Transmit(&huart2, (uint8_t *)str, strlen (str), HAL_MAX_DELAY);
-
-	  for (int i=0; i<20; i++)
-	  {
-		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-		  HAL_Delay(100);
-	  }
-
-  }
-}
-*********************************************************************************************/
-
+//--------------------------------------------------------------------------------------------
 void irdTask(void *argument)
 {
 #ifdef SET_IRED
 
 	ird_exit = 0;
 
-bool ep_start = false;
-char ep_str[16] = {0};
-uint32_t ep_tmr = 0;
-uint32_t tmr_ired = 0;
-enIntIRED();
+	bool ep_start = false;
+	char ep_str[16] = {0};
+	uint32_t ep_tmr = 0;
+	uint32_t tmr_ired = 0;
+
+
+	if (waitBit);
+
+	enIntIRED();
+
 
   while (!restart) {
 
@@ -2178,15 +2134,10 @@ void StartTask(void *argument)
 
 #endif
 
-/*
+
 #ifdef SET_IRED
-    bool ep_start = false;
-    char ep_str[16] = {0};
-    uint32_t ep_tmr = 0;
-	uint32_t tmr_ired = 0;
-	enIntIRED();
+    waitBit = false;
 #endif
-*/
 
 	uint16_t lastErr = devOK;
 
@@ -2195,135 +2146,6 @@ void StartTask(void *argument)
 
     while (!restart) {
 
-/*
-#ifdef SET_IRED
-  		if (!tmr_ired) {
-			if (decodeIRED(&results)) {
-
-				tmr_ired = get_mstmr(_300ms);
-				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
-				int8_t kid = -1;
-				for (int8_t i = 0; i < MAX_IRED_KEY; i++) {
-					if (results.value == keyAll[i].code) {
-						kid = i;
-						break;
-					}
-				}
-				//
-				if (kid == -1) sprintf(stline, "CODE:%08lX", results.value);
-						  else sprintf(stline, "irKEY: %s", keyAll[kid].name);
-				Report(1, "[que:%u] %s\r\n", cntEvt, stline);
-				//
-				if (kid != -1) {
-					int ird = evt_None;
-					switch (kid) {
-						case key_ch:
-							ird = evt_Restart;
-						break;
-						case key_ch_plus:
-							seek_up = 1;
-							ird = evt_Scan;
-						break;
-						case key_ch_minus:
-							seek_up = 0;
-							ird = evt_Scan;
-						break;
-						case key_minus:
-							if (Volume) {
-								newVolume = Volume - 1;
-								ird = evt_Vol;
-							}
-						break;
-						case key_plus:
-							if (Volume < 15) {
-								newVolume = Volume + 1;
-								ird = evt_Vol;
-							}
-						break;
-						case key_left:
-							seek_up = 0;
-							ird = evt_List;
-						break;
-						case key_right:
-							seek_up = 1;
-							ird = evt_List;
-						break;
-						case key_eq:// enable/disable print via uart
-							ird = evt_Mute;//evt_Sleep);
-						break;
-						case key_sp:
-							if (!ep_start) {
-								ep_start = true;
-								memset(ep_str, 0, sizeof(ep_str));
-								ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - Font_6x8.FontHeight, SCREEN_WIDTH - 1, Font_6x8.FontHeight, PIX_OFF);
-								sprintf(tmp, "Time:");
-								ST7565_Print(0, SCREEN_HEIGHT - Font_6x8.FontHeight, tmp, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
-								ST7565_Update();
-								ep_tmr = get_tmr(20);
-							} else {
-								ep_start = false;
-								ep_tmr = 0;
-								epoch = atoi(ep_str);
-								ird = evt_Epoch;
-							}
-						break;
-						case key_100://bandUp();
-							if (Band < MAX_BAND) {
-								newBand = Band + 1;
-								ird = evt_Band;
-							}
-						break;
-						case key_200://bandDown();
-							if (Band) {
-								newBand = Band - 1;
-								ird = evt_Band;
-							}
-						break;
-						case key_0:
-						case key_1:
-						case key_2:
-						case key_3:
-						case key_4:
-						case key_5:
-						case key_6:
-						case key_7:
-						case key_8:
-						case key_9:
-							if (ep_start) {
-								if (strlen(ep_str) < 10) {
-									char ch = (kid - key_0) + 0x30;
-									sprintf(ep_str+strlen(ep_str), "%c", ch);
-									ST7565_Print(32, SCREEN_HEIGHT - Font_6x8.FontHeight, ep_str, &Font_6x8, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
-									ST7565_Update();
-									ep_tmr = get_tmr(20);
-								}
-							} else {
-									newFreq = list[kid - key_0 + 2].freq;//for band=2 only !!!
-									ird = evt_Freq;
-							}
-						break;
-					}//switch (kid)
-					if (ird != evt_None) {
-						if (osMessageQueuePut(evtQueHandle, (const void *)&ird, prio, 2) != osOK) devError |= devEVT;
-					}
-				}//if (kid != -1)
-			}//if (decodeIRED(&results))
-		}
-  		if (ep_tmr) {
-  			if (check_tmr(ep_tmr)) {
-  				ep_tmr = 0;
-  				ep_start = false;
-  			}
-  		}
-		if (tmr_ired) {
-			if (check_mstmr(tmr_ired)) {
-				tmr_ired = 0;
-				resumeIRED();
-				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
-			}
-		}
-#endif
-*/
 		evt = evt_None;
 		if (osMessageQueueGet(evtQueHandle, &evt, NULL, 1) == osOK) {
     		cntEvt = getQueCount(evtQueHandle);
@@ -2364,8 +2186,6 @@ void StartTask(void *argument)
 	#endif
     				HAL_Delay(250);
     				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
-
-    				//putEvt(evt_SleepCont);
     				ev = evt_SleepCont;
     				if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
     			break;
@@ -2375,15 +2195,15 @@ void StartTask(void *argument)
     				ST7565_CMD_DISPLAY(CMD_DISPLAY_ON);
 	#endif
 	#ifdef SET_BLE
-    				bleWakeUp();//putEvt(evt_WakeUp);
+    				bleWakeUp();
 	#endif
     				Report(1, "Exit from SLEEP MODE\r\n");
     			break;
-    			case evt_WakeUp:
 	#ifdef SET_BLE
+    			case evt_WakeUp:
     				bleWakeUp();
-	#endif
     			break;
+	#endif
     			case evt_Band:
     				Band = newBand;
     				if (!rda5807_Set_Band(Band)) {
@@ -2393,13 +2213,11 @@ void StartTask(void *argument)
     					if (next_evt == evt) {
     						if ((Freq < lBand) || (Freq > rBand)) {
     							newFreq = lBand;
-    							//putEvt(evt_Freq);
     							ev = evt_Freq;
     							if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
     						}
     					} else {
     						next_evt = evt;
-    						//putEvt(evt_Freq);
     						ev = evt_Freq;
     						if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
     					}
@@ -2413,15 +2231,12 @@ void StartTask(void *argument)
     				newFreq = getNextList(Freq, seek_up, &newBand);
 					if (newBand == Band) {
 						Report(1, "Band = newBand = %u -> goto set newFreq to %.1f (up = %u)\r\n", newBand, newFreq, seek_up);
-    					//putEvt(evt_Freq);
 						ev = evt_Freq;
-    					if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
 					} else {
 						Report(1, "Band = %u -> goto set newBand to %u (newFreq to %.1f up = %u)\r\n", Band, newBand, newFreq, seek_up);
-    					//putEvt(evt_Band);
 						ev = evt_Band;
-						if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
 					}
+					if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
     			break;
     			case evt_Bass:
     				if (newBassBoost != BassBoost) {
@@ -2638,7 +2453,6 @@ void StartTask(void *argument)
     			etime = HAL_GetTick();
     			Report(0, " done (%lu sec)\r\n", (etime - btime) / 1000);
     		} else {
-    			//putEvt(evt_sErase);
     			W25qxx_EraseSector(adr_sector);
     			if (!(adr_sector % 8)) Report(0, ".");
     		}
@@ -2651,8 +2465,7 @@ void StartTask(void *argument)
     		if (!osMessageQueueGet(ackQueHandle, (void *)&_ack, NULL, 1)) {
     			if (_ack.msg) {
     				strcpy(bleRxBuf, _ack.msg);
-    				free(_ack.msg);
-    				//vPortFree(_ack.msg);
+    				free(_ack.msg);//vPortFree(_ack.msg);
     				Report(1, "[BLE_rx] %s\r\n", bleRxBuf);
     			}
     		}

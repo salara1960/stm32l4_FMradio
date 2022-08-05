@@ -89,7 +89,9 @@ enum {
 	cmdList,
 	cmdBand,
 	cmdCfg,
+#ifdef SET_BLE
 	cmdWakeUp,
+#endif
 	cmdExitSleep,
 	cmdSleep,
 	cmdSleepCont,
@@ -120,7 +122,9 @@ enum {
 	evt_List,
 	evt_Band,
 	evt_Cfg,
+#ifdef SET_BLE
 	evt_WakeUp,
+#endif
 	evt_ExitSleep,
 	evt_Sleep,
 	evt_SleepCont,
@@ -215,7 +219,11 @@ enum {
 #else
 #define MAX_ERR_CODE 10
 #endif
-#define MAX_CMDS          27
+#ifdef SET_BLE
+	#define MAX_CMDS      27
+#else
+	#define MAX_CMDS      26
+#endif
 #define MAX_LIST          25
 #define MAX_BAND           4
 #define MAX_STEP           4
