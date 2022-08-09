@@ -125,14 +125,17 @@ const osSemaphoreAttr_t itSem_attributes = {
 //const char *ver = "1.7.2 03.08.22";
 //const char *ver = "1.8 03.08.22";// add FreeRTOS
 //const char *ver = "1.8.1 04.08.22";// minor changes in callback_timer_6 (support infrared)
-const char *ver = "1.8.2 05.08.22";//fixed minor error from portBLE at startup (when power on)
+//const char *ver = "1.8.2 05.08.22";//fixed minor error from portBLE at startup (when power on)
+//const char *ver = "1.8.3 07.08.22";//set ANT_TYPE to External
+//const char *ver = "1.8.4 08.08.22";
+const char *ver = "1.8.5 09.08.22";//add new command for support infrared
 
 
 
 osThreadId_t irdTaskHandle;
 const osThreadAttr_t irdTask_attributes = {
   .name = "irdTask",
-  .stack_size = 1024 * 4,
+  .stack_size = 1536 * 4,
   .priority = (osPriority_t) osPriorityBelowNormal7,//osPriorityNormal,
 };
 bool waitBit = true;
@@ -176,7 +179,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1659702715;//1659624810;
+static uint32_t epoch = 1660052289;//1659974469;//1659886879;//1659874060;//1659702715;//1659624810;
 //1659614411;//1659558535;//1659552520;//1659535529;//1659476485;//1659465512;//1659390226;//1659381664;
 //1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
@@ -213,10 +216,15 @@ const char *s_cmds[MAX_CMDS] = {
 	"exitsleep",
 	"sleep",
 	"sleepcont",
+#ifdef SET_RDS
 	"rds",
+#endif
 	"qevt",
 	"qack",
 	"qcmd"
+#ifdef SET_IRED
+	,"ired"
+#endif
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -244,10 +252,15 @@ const char *str_cmds[MAX_CMDS] = {
 	"ExitSleep",
 	"Sleep",
 	"SleepCont",
+#ifdef SET_RDS
 	"readRDS",
+#endif
 	"queEvt",
 	"queAck",
 	"queCmd"
+#ifdef SET_IRED
+	,"iredShow"
+#endif
 };
 
 
@@ -275,70 +288,69 @@ volatile uint8_t spiRdy = 1;
 	FontDef_t *lfnt = NULL;
 #endif
 
-#ifdef SET_RDA_CHIP
-	float Freq = 94.0;//96.3;//95.1;
-	float newFreq = 95.1;
-	float lBand = 0.0;
-	float rBand = 0.0;
-	uint8_t Band = 2;// :2
-	uint8_t newBand = 2;
-	uint16_t Chan = 0;
-	uint16_t RSSI = 0;
-	volatile uint8_t i2cRdy = 1;
-	uint8_t rdaID = 0;
-	volatile uint8_t scan = 0;
-	volatile uint8_t seek_up = 1;
-	uint8_t Volume = 5;
-	uint8_t newVolume = 5;
-	uint8_t BassBoost = 0;
-	uint8_t newBassBoost = 0;
-	bool stereo = false;
-	uint8_t noMute = 1;
-	uint8_t dataRDS[8] = {0};
-	bool syncRds = false;
-	bool readyRds = false;
-	//
-	const char *noneStation = "???";
-	static const rec_t def_list[MAX_LIST] = {
-		//Band:3 65-76
-		{3, 68.5, "Маяк"},// Маяк
-		{3, 72.1, "Шансон"},// Шансон
-		//Band:2,1 76-108, 87-108
-		{2, 93.6, "Радио_7"},// Радио 7
-		{2, 94.0, "Комеди_Радио"},// Комеди Радио
-		{2, 95.1, "Вести_ФМ"},// Вести ФМ
-		{2, 95.5, "Ретро_ФМ"},// Ретро ФМ
-		{2, 96.3, "Русское_Радио"},// Русское Радио
-		{2, 97.0, "Радио_Вера"},// Радио Книга
-		{2, 97.9, "Серебр.Дождь"},// Серебрянный Дождь
-		{2, 98.5, "Радио_Энергия"},// Радио Энергия
-		{2, 99.5, "Радио_Звезда"},// Радио Звезда
-		{2, 100.1, "Авто_Радио"},// АвтоРадио
-		{2, 100.6, "Русский_Край"},// Русский Край
-		{2, 100.9, "Монте-Карло"},// Монте-Карло
-		{2, 101.3, "Наше_Радио"},// Наше Радио
-		{2, 101.8, "Бизнес_ФМ"},// Бизнес ФМ
-		{2, 102.5, "Маяк"},// Маяк
-		{2, 102.9, "Любимое_Радио"},// Любимое Радио
-		{2, 103.4, "Студия_21"},// Студия 21
-		{2, 103.9, "Радио_России"},// Радио России
-		{2, 104.5, "Европа_Плюс"},// Европа Плюс
-		{2, 105.2, "Балтик_Плюс"},// Балтик Плюс
-		{2, 105.9, "Дорожное_Радио"},// Дорожное Радио
-		{2, 106.4, "Радио_Максим"},// Радио Максим
-		{2, 107.2, "Радио_КП"}// Комсомольская Правда
-	};
-	rec_t list[MAX_LIST];
-	uint16_t listSize = 0;
-	//
-	const char *allBands[MAX_BAND] = {
-		"87-108 MHz",// (US/Europe)",
-		"76-91 MHz",// (Japan)",
-		"76-108 MHz",// (world wide)",
-		"65-76 MHz"// (East Europe) or 50-65MHz"
-	};
 
-#endif
+float Freq = 94.0;//96.3;//95.1;
+float newFreq = 95.1;
+float lBand = 0.0;
+float rBand = 0.0;
+uint8_t Band = 2;// :2
+uint8_t newBand = 2;
+uint16_t Chan = 0;
+uint16_t RSSI = 0;
+volatile uint8_t i2cRdy = 1;
+uint8_t rdaID = 0;
+volatile uint8_t scan = 0;
+volatile uint8_t seek_up = 1;
+uint8_t Volume = 5;
+uint8_t newVolume = 5;
+uint8_t BassBoost = 0;
+uint8_t newBassBoost = 0;
+bool stereo = false;
+uint8_t noMute = 1;
+uint8_t dataRDS[8] = {0};
+bool syncRds = false;
+bool readyRds = false;
+//
+const char *noneStation = "???";
+static const rec_t def_list[MAX_LIST] = {
+	//Band:3 65-76
+	{3, 68.5, "Маяк"},// Маяк
+	{3, 72.1, "Шансон"},// Шансон
+	//Band:2,1 76-108, 87-108
+	{2, 93.6, "Радио_7"},// Радио 7
+	{2, 94.0, "Комеди_Радио"},// Комеди Радио
+	{2, 95.1, "Вести_ФМ"},// Вести ФМ
+	{2, 95.5, "Ретро_ФМ"},// Ретро ФМ
+	{2, 96.3, "Русское_Радио"},// Русское Радио
+	{2, 97.0, "Радио_Вера"},// Радио Книга
+	{2, 97.9, "Серебр.Дождь"},// Серебрянный Дождь
+	{2, 98.5, "Радио_Энергия"},// Радио Энергия
+	{2, 99.5, "Радио_Звезда"},// Радио Звезда
+	{2, 100.1, "Авто_Радио"},// АвтоРадио
+	{2, 100.6, "Русский_Край"},// Русский Край
+	{2, 100.9, "Монте-Карло"},// Монте-Карло
+	{2, 101.3, "Наше_Радио"},// Наше Радио
+	{2, 101.8, "Бизнес_ФМ"},// Бизнес ФМ
+	{2, 102.5, "Маяк"},// Маяк
+	{2, 102.9, "Любимое_Радио"},// Любимое Радио
+	{2, 103.4, "Студия_21"},// Студия 21
+	{2, 103.9, "Радио_России"},// Радио России
+	{2, 104.5, "Европа_Плюс"},// Европа Плюс
+	{2, 105.2, "Балтик_Плюс"},// Балтик Плюс
+	{2, 105.9, "Дорожное_Радио"},// Дорожное Радио
+	{2, 106.4, "Радио_Максим"},// Радио Максим
+	{2, 107.2, "Радио_КП"}// Комсомольская Правда
+};
+rec_t list[MAX_LIST];
+uint16_t listSize = 0;
+	//
+const char *allBands[MAX_BAND] = {
+	"87-108 MHz",// (US/Europe)",
+	"76-91 MHz",// (Japan)",
+	"76-108 MHz",// (world wide)",
+	"65-76 MHz"// (East Europe) or 50-65MHz"
+};
+
 
 
 #if defined(SET_BLE) || defined(SET_AUDIO)
@@ -397,10 +409,11 @@ volatile uint8_t spiRdy = 1;
 
 	TIM_HandleTypeDef *portIRED = &htim6; // таймер для приёма
 	char stline[40] = {0};
+	bool ired_show = true;
 #endif
 
 uint8_t prio = 0;
-bool ird_exit = 1;
+volatile bool ird_exit = true;
 
 /* USER CODE END PV */
 
@@ -617,12 +630,13 @@ int main(void)
   /* creation of evtQue */
   evtQueHandle = osMessageQueueNew (8, sizeof(rec_evt_t), &evtQue_attributes);
 
+#if defined(SET_BLE) || defined(SET_AUDIO)
   /* creation of cmdQue */
   cmdQueHandle = osMessageQueueNew (8, sizeof(rec_msg_t), &cmdQue_attributes);
 
   /* creation of ackQue */
   ackQueHandle = osMessageQueueNew (8, sizeof(rec_msg_t), &ackQue_attributes);
-
+#endif
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
@@ -639,6 +653,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_EVENTS */
   /* add events, ... */
+  //osStat = osKernelStart();
   /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
@@ -1463,9 +1478,11 @@ void Report(const uint8_t addTime, const char *fmt, ...)
 	if(sleep_mode) return;
 #endif
 
+
 	size_t len = MAX_UART_BUF;
 	char *buf = &cmdBuf[0];
 
+/*
 	uint8_t cnt = 32;
 	uint32_t stim = HAL_GetTick();
 	uint32_t etim = stim;
@@ -1476,7 +1493,7 @@ void Report(const uint8_t addTime, const char *fmt, ...)
 			cnt--;
 		}
 	}
-
+*/
 	//if (buf) {
 		*buf = '\0';
 		int dl = 0;
@@ -1490,17 +1507,12 @@ void Report(const uint8_t addTime, const char *fmt, ...)
 		va_start(args, fmt);
 		vsnprintf(buf + dl, len - dl, fmt, args);
 
-		//if (itSemHandle != NULL) {
-			if (osSemaphoreAcquire(itSemHandle, 2000) == osOK) {
-		//}
-				uartRdy = false;
-				if (HAL_UART_Transmit_DMA(cmdPort, (uint8_t *)buf, strlen(buf)) != HAL_OK) devError |= devUART;
-				while (!uartRdy) {} //HAL_Delay(1)
-
-		//if (itSemHandle) {
-				osSemaphoreRelease(itSemHandle);
-			}
-		//}
+		uartRdy = false;
+		if (osSemaphoreAcquire(itSemHandle, 2000) == osOK) {
+			if (HAL_UART_Transmit_DMA(cmdPort, (uint8_t *)buf, strlen(buf)) != HAL_OK) devError |= devUART;
+			while (!uartRdy) {} //HAL_Delay(1)
+			osSemaphoreRelease(itSemHandle);
+		}
 
 		va_end(args);
 
@@ -1667,10 +1679,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 								case cmdWakeUp://"wakeup"
 #endif
 								case cmdSleep://"sleep" -> goto sleep mode
+#ifdef SET_RDS
 								case cmdRds://"rds"
+#endif
 								case cmdEvt://"qevt"
 								case cmdAck://"qack"
 								case cmdCmd://"qcmd"
+#ifdef SET_IRED
+								case cmdiRed://"ired"
+#endif
 									ev = i;
 								break;
 								case cmdEpoch://"epoch:1657191323"
@@ -1807,20 +1824,12 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 //--------------------------------------------------------------------------------------------
 void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
-#ifdef SET_RDA_CHIP
-	if (hi2c->Instance == I2C1) {
-		i2cRdy = 1;
-	}
-#endif
+	if (hi2c->Instance == I2C1) i2cRdy = 1;
 }
 //--------------------------------------------------------------------------------------------
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
-#ifdef SET_RDA_CHIP
-	if (hi2c->Instance == I2C1) {
-		devError |= devRDA;
-	}
-#endif
+	if (hi2c->Instance == I2C1) devError |= devRDA;
 }
 //--------------------------------------------------------------------------------------------
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -1856,7 +1865,7 @@ void irdTask(void *argument)
 {
 #ifdef SET_IRED
 
-	ird_exit = 0;
+	ird_exit = false;
 
 	bool ep_start = false;
 	char ep_str[16] = {0};
@@ -1884,9 +1893,13 @@ void irdTask(void *argument)
 				}
 			}
 			//
-			if (kid == -1) sprintf(stline, "CODE:%08lX", results.value);
-					  else sprintf(stline, "irKEY: %s", keyAll[kid].name);
-			Report(1, "[que:%u] %s\r\n", cntEvt, stline);
+			stline[0] = '\0';
+			if (kid == -1) {
+				if (ired_show) sprintf(stline, "CODE:%08lX", results.value);
+			} else {
+				sprintf(stline, "irKEY: %s", keyAll[kid].name);
+			}
+			if (strlen(stline)) Report(1, "[que:%u] %s\r\n", cntEvt, stline);
 			//
 			if (kid != -1) {
 				int ird = evt_None;
@@ -1983,6 +1996,7 @@ void irdTask(void *argument)
 			}//if (kid != -1)
 		}//if (decodeIRED(&results))
 	}
+
 	if (ep_tmr) {
 		if (check_tmr(ep_tmr)) {
 			ep_tmr = 0;
@@ -1997,9 +2011,11 @@ void irdTask(void *argument)
 		}
 	}
 
-  }
+  }//while
 
-  ird_exit = 1;
+  ird_exit = true;
+
+  HAL_Delay(200);
 
   osThreadExit();
 
@@ -2022,6 +2038,10 @@ void StartTask(void *argument)
 
 
     Report(1, "[que:%u] Start application ver.%s\r\n", getQueCount(evtQueHandle), ver);
+
+    uint16_t lastErr = devOK;
+    int evt;
+    rec_evt_t evts = {cmdNone, 0};
 
 #ifdef SET_W25FLASH
     chipPresent = W25qxx_Init();
@@ -2049,14 +2069,12 @@ void StartTask(void *argument)
 #endif
 
 
-#ifdef SET_RDA_CHIP
-    rdaID = rda5807_init(&Freq);
-    RSSI = rda5807_rssi();
-    rda5807_SetVolume(Volume);
-    rda5807_SetBassBoost(BassBoost);
-    stereo = rda5807_Get_StereoMonoFlag();
-    Chan = rda5807_Get_Channel();
-#endif
+rdaID = rda5807_init(&Freq);
+RSSI = rda5807_rssi();
+rda5807_SetVolume(Volume);
+rda5807_SetBassBoost(BassBoost);
+stereo = rda5807_Get_StereoMonoFlag();
+Chan = rda5807_Get_Channel();
 
 
 #ifdef SET_DISPLAY
@@ -2083,42 +2101,40 @@ void StartTask(void *argument)
     uint16_t x = ((SCREEN_WIDTH - (lfnt->FontWidth * dl)) >> 1) & 0x7f;
     ST7565_Print(x, SCREEN_HEIGHT - lfnt->FontHeight, tmp, lfnt, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
 
-	#ifdef SET_RDA_CHIP
-    	int il = sprintf(st, "RDA5807 chipID:0x%x", rdaID);
-    	uint16_t xf = ((SCREEN_WIDTH - (lfnt->FontWidth * il)) >> 1) & 0x7f;
-    	if (!xf) xf = 1;
-    	ST7565_Print(xf, lin2, st, lfnt, 1, PIX_ON);
+    int il = sprintf(st, "RDA5807 chipID:0x%x", rdaID);
+    uint16_t xf = ((SCREEN_WIDTH - (lfnt->FontWidth * il)) >> 1) & 0x7f;
+    if (!xf) xf = 1;
+    ST7565_Print(xf, lin2, st, lfnt, 1, PIX_ON);
 
-    	int it = sprintf(stb, "FM Band:%s", allBands[Band]);//(uint16_t)lBand, (uint16_t)rBand);
-    	int lit = it;
-    	xf = ((SCREEN_WIDTH - (lfnt->FontWidth * it)) >> 1) & 0x7f;
-    	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
-    	ST7565_Print(xf, lin3, stb, lfnt, 1, PIX_ON);
+    int it = sprintf(stb, "FM Band:%s", allBands[Band]);//(uint16_t)lBand, (uint16_t)rBand);
+    int lit = it;
+    xf = ((SCREEN_WIDTH - (lfnt->FontWidth * it)) >> 1) & 0x7f;
+    if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
+    ST7565_Print(xf, lin3, stb, lfnt, 1, PIX_ON);
 
-    	int im = sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
-    	int lim = im;
-    	xf = ((SCREEN_WIDTH - (lfnt->FontWidth * im)) >> 1) & 0x7f;
-    	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
-    	ST7565_Print(xf, lin4, st, lfnt, 1, PIX_ON);
+    int im = sprintf(st, "Bass:%u Vol:%u", BassBoost, Volume);
+    int lim = im;
+    xf = ((SCREEN_WIDTH - (lfnt->FontWidth * im)) >> 1) & 0x7f;
+    if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
+    ST7565_Print(xf, lin4, st, lfnt, 1, PIX_ON);
 
-    	if (stereo)
-    		il = sprintf(st, "Rssi:%u Freq:%.1f S", RSSI, Freq);
-    	else
-    		il = sprintf(st, "Rssi:%u Freq:%.1f", RSSI, Freq);
-    	int lil = il;
-    	xf = ((SCREEN_WIDTH - (lfnt->FontWidth * il)) >> 1) & 0x7f;
-    	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
-    	ST7565_Print(xf, lin5, st, lfnt, 1, PIX_ON);
+    if (stereo)
+    	il = sprintf(st, "Rssi:%u Freq:%.1f S", RSSI, Freq);
+    else
+    	il = sprintf(st, "Rssi:%u Freq:%.1f", RSSI, Freq);
+    int lil = il;
+    xf = ((SCREEN_WIDTH - (lfnt->FontWidth * il)) >> 1) & 0x7f;
+    if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
+    ST7565_Print(xf, lin5, st, lfnt, 1, PIX_ON);
 
-    	int ia = sprintf(sta, "%s", nameStation(Freq));
-    	int lia = ia;
-    	xf = ((SCREEN_WIDTH - (lfnt->FontWidth * ia)) >> 1) & 0x7f;
-    	if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
-    	ST7565_Print(xf, lin6, sta, lfnt, 1, PIX_ON);
+    int ia = sprintf(sta, "%s", nameStation(Freq));
+    int lia = ia;
+    xf = ((SCREEN_WIDTH - (lfnt->FontWidth * ia)) >> 1) & 0x7f;
+    if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
+    ST7565_Print(xf, lin6, sta, lfnt, 1, PIX_ON);
 
-    	Report(1, "ChipID:0x%x Chan:%u Freq:%.2f %s RSSI:%u Band:%s Vol:%u BassEn:%u\r\n",
+    Report(1, "ChipID:0x%x Chan:%u Freq:%.2f %s RSSI:%u Band:%s Vol:%u BassEn:%u\r\n",
     			rdaID, Chan, Freq, sta, RSSI, allBands[Band], Volume, BassBoost);
-	#endif
 
     ST7565_DrawRectangle(0, lfnt->FontHeight, SCREEN_WIDTH - 1, SCREEN_HEIGHT - (lfnt->FontHeight << 1) - 2, PIX_ON);
     ST7565_DrawFilledRectangle(0, 0, SCREEN_WIDTH - 1, lfnt->FontHeight, PIX_ON);
@@ -2133,15 +2149,27 @@ void StartTask(void *argument)
     waitBit = false;
 #endif
 
-	uint16_t lastErr = devOK;
+#ifdef SET_RDS
+    blocks_t *blk = NULL;
+    const uint64_t rdsWait = _30ms;
+    bool rdsFlag = false;
+    uint64_t rdsTime = 0;
+    uint16_t sID = 0; // ID радиостанции
+    uint16_t MaybeThisIDIsReal = 0; // Предыдущее значение ID
+    uint8_t IDRepeatCounter = 0; // Счетчик повторений ID
+    const uint8_t REPEATS_TO_BE_REAL_ID = 3;
+    uint8_t errLevelB, groupType, groupVer;
+#endif
 
-	int evt, ev = evt_Freq;
-	if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 20) != osOK) devError |= devEVT;
+	evts.evt = evt_Freq;
+	if (osMessageQueuePut(evtQueHandle, (const void *)&evts, prio, 20) != osOK) devError |= devEVT;
+
 
     while (!restart) {
 
-		evt = evt_None;
-		if (osMessageQueueGet(evtQueHandle, &evt, NULL, 1) == osOK) {
+		evts.evt = evt_None;
+		if (osMessageQueueGet(evtQueHandle, &evts, NULL, 1) == osOK) {
+			evt = evts.evt;
     		cntEvt = getQueCount(evtQueHandle);
     		if (evt != evt_Sec) {
     			//Report(1, "[que:%u] get event '%s'\r\n", cntEvt, str_cmds[evt]);
@@ -2154,14 +2182,34 @@ void StartTask(void *argument)
 	#endif
     		}
     		switch (evt) {
-    			case evt_Rds:
-    				memset(dataRDS, 0, sizeof(dataRDS));
-    				readyRds = rda5807_Get_RDSData(dataRDS, &syncRds);
-    				sprintf(tmp, "[RDS] ready=%d sync=%d :", readyRds, syncRds);
-    				for (int8_t i = 0; i < sizeof(dataRDS); i++)
-    					sprintf(tmp+strlen(tmp), " %02X", dataRDS[i]);
-    				Report(1, "%s\r\n", tmp);
+#ifdef SET_IRED
+    			case evt_iRed:
+    				if (ired_show) {
+    					ired_show = false;
+    					Report(1, "[que:%u] iRed Show code is hide\r\n", cntEvt);
+    				} else {
+    					ired_show = true;
+    					Report(1, "[que:%u] iRed Show code is show\r\n", cntEvt);
+    				}
     			break;
+#endif
+#ifdef SET_RDS
+    			case evt_Rds:
+    				if (!rdsFlag) {
+    					Report(1, "[que:%u] RDS monitoring start\r\n", cntEvt);
+    					rdsFlag = true;
+    					rdsTime = get_mstmr(rdsWait);
+    				} else {
+    					Report(1, "[que:%u] RDS monitoring stop\r\n", cntEvt);
+    					rdsFlag = false;
+    					rdsTime = 0;
+    					//
+    					sID = 0;
+    					MaybeThisIDIsReal = 0;
+    					IDRepeatCounter = 0;
+    				}
+    			break;
+#endif
     			case evt_SleepCont:
     				sleep_mode = true;
     				//
@@ -2180,8 +2228,8 @@ void StartTask(void *argument)
 	#endif
     				HAL_Delay(250);
     				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_RESET);
-    				ev = evt_SleepCont;
-    				if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
+    				evts.evt = evt_SleepCont;
+    				if (osMessageQueuePut(evtQueHandle, (const void *)&evts, prio, 10) != osOK) devError |= devEVT;
     			break;
     			case evt_ExitSleep:
     				HAL_GPIO_WritePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin, GPIO_PIN_SET);
@@ -2207,13 +2255,13 @@ void StartTask(void *argument)
     					if (next_evt == evt) {
     						if ((Freq < lBand) || (Freq > rBand)) {
     							newFreq = lBand;
-    							ev = evt_Freq;
-    							if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
+    							evts.evt = evt_Freq;
+    							if (osMessageQueuePut(evtQueHandle, (const void *)&evts, prio, 10) != osOK) devError |= devEVT;
     						}
     					} else {
     						next_evt = evt;
-    						ev = evt_Freq;
-    						if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
+    						evts.evt = evt_Freq;
+    						if (osMessageQueuePut(evtQueHandle, (const void *)&evts, prio, 10) != osOK) devError |= devEVT;
     					}
     				}
     			break;
@@ -2225,12 +2273,12 @@ void StartTask(void *argument)
     				newFreq = getNextList(Freq, seek_up, &newBand);
 					if (newBand == Band) {
 						Report(1, "Band = newBand = %u -> goto set newFreq to %.1f (up = %u)\r\n", newBand, newFreq, seek_up);
-						ev = evt_Freq;
+						evts.evt = evt_Freq;
 					} else {
 						Report(1, "Band = %u -> goto set newBand to %u (newFreq to %.1f up = %u)\r\n", Band, newBand, newFreq, seek_up);
-						ev = evt_Band;
+						evts.evt = evt_Band;
 					}
-					if (osMessageQueuePut(evtQueHandle, (const void *)&ev, prio, 10) != osOK) devError |= devEVT;
+					if (osMessageQueuePut(evtQueHandle, (const void *)&evts, prio, 10) != osOK) devError |= devEVT;
     			break;
     			case evt_Bass:
     				if (newBassBoost != BassBoost) {
@@ -2287,6 +2335,12 @@ void StartTask(void *argument)
     						sprintf(sta, "%s", nameStation(Freq));
     						showLine(sta, lin6, &lia, true);
     						Report(1, "[que:%u] set new Freq to %.1f %s (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
+#ifdef SET_RDS
+    						sID = 0;
+    						MaybeThisIDIsReal = 0;
+    						IDRepeatCounter = 0;
+    						errLevelB = 0;
+#endif
     					}
     				}
 				break;
@@ -2478,6 +2532,49 @@ void StartTask(void *argument)
     	//
     	//
     	//
+#ifdef SET_RDS
+    	if (rdsFlag && rdsTime) {
+    		if (check_mstmr(rdsTime)) {
+    			if (!readyRds && rda5807_Get_RDSReady()) {
+    				memset(dataRDS, 0, sizeof(dataRDS));
+    				rda5807_Get_RDSData(dataRDS);
+    				blk = (blocks_t *)&dataRDS;
+    				Report(1, "[RDS] %04X %04X %04X %04X\r\n", blk->blockA, blk->blockB, blk->blockC, blk->blockD);
+
+    				// Сравним содержимое блока A (ID станции) с предыдущим значением
+    				if (blk->blockA == MaybeThisIDIsReal) {
+    					if (IDRepeatCounter < REPEATS_TO_BE_REAL_ID) {
+    						IDRepeatCounter++; // Значения совпадают, отразим это в счетчике
+    						if (IDRepeatCounter == REPEATS_TO_BE_REAL_ID)
+    							sID = MaybeThisIDIsReal; // Определились с ID станции
+    				    }
+    				} else {
+    					IDRepeatCounter = 0; // Значения не совпадают, считаем заново
+    					MaybeThisIDIsReal = blk->blockA;
+    				}
+    				//
+    				tmp[0] = '\0';
+    				// ID станции не скачет, вероятность корректности группы в целом выше
+    				errLevelB = (rda5807_Get_reg0B() & RDA5807M_BLERB_MASK);
+    				if (errLevelB < 3) {
+    					// Блок B корректный, можем определить тип и версию группы
+    					groupType = (blk->blockB & RDS_ALL_GROUPTYPE_MASK) >> RDS_ALL_GROUPTYPE_SHIFT;
+    					groupVer = (blk->blockB & RDS_ALL_GROUPVER) > 0;
+    					sprintf(tmp, "Group: %u %c", groupType, 'A'+groupVer);
+    				}
+    				if ((sID == 0) || (blk->blockA != sID)) strcat(tmp, " - invalid group");
+    				else
+    				if (strlen(tmp)) Report(1, "%s\r\n", tmp);
+    				//
+    			}
+    			readyRds = rda5807_Get_RDSReady();
+    			rdsTime = get_mstmr(rdsWait);
+    		}
+    	}
+#endif
+    	//
+    	//
+    	//
     	if (devError) {
     		errLedOn(true);
     		HAL_Delay(50);
@@ -2500,11 +2597,15 @@ void StartTask(void *argument)
     	//
     }//while (!restart)
 
-    while (!ird_exit);
+    uint8_t sch = 3;
+    while (!ird_exit && sch) {
+    	HAL_Delay(1000);
+    	sch--;
+    }
 
     Report(1, "[que:%u] Stop application...\r\n", cntEvt);
 
-    HAL_Delay(250);
+    HAL_Delay(350);
 
 
     NVIC_SystemReset();

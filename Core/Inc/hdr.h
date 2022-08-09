@@ -11,9 +11,9 @@
 
 #define SET_W25FLASH
 #define SET_DISPLAY
-#define SET_RDA_CHIP
+//#define SET_RDS
 //#define SET_BLE
-#define SET_AUDIO
+//#define SET_AUDIO
 #define SET_SLEEP
 #define SET_IRED
 

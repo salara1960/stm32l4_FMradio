@@ -95,10 +95,15 @@ enum {
 	cmdExitSleep,
 	cmdSleep,
 	cmdSleepCont,
+#ifdef SET_RDS
 	cmdRds,
+#endif
 	cmdEvt,
 	cmdAck,
 	cmdCmd
+#ifdef SET_IRED
+	,cmdiRed
+#endif
 };
 
 enum {
@@ -128,10 +133,15 @@ enum {
 	evt_ExitSleep,
 	evt_Sleep,
 	evt_SleepCont,
+#ifdef SET_RDS
 	evt_Rds,
+#endif
 	evt_Evt,
 	evt_Ack,
 	evt_Cmd
+#ifdef SET_IRED
+	,evt_iRed
+#endif
 };
 
 
@@ -142,9 +152,7 @@ enum {
 #ifdef SET_DISPLAY
 	#include "ST7565.h"
 #endif
-#ifdef SET_RDA_CHIP
-	#include "rda5807.h"
-#endif
+#include "rda5807.h"
 #ifdef SET_IRED
 	#include "IRremote.h"
 #endif
@@ -219,10 +227,35 @@ enum {
 #else
 #define MAX_ERR_CODE 10
 #endif
+
 #ifdef SET_BLE
-	#define MAX_CMDS      27
+	#ifdef SET_RDS
+		#ifdef SET_IRED
+			#define MAX_CMDS  28
+		#else
+			#define MAX_CMDS  27
+		#endif
+	#else
+		#ifdef SET_IRED
+			#define MAX_CMDS  27
+		#else
+			#define MAX_CMDS  26
+		#endif
+	#endif
 #else
-	#define MAX_CMDS      26
+	#ifdef SET_RDS
+		#ifdef SET_IRED
+			#define MAX_CMDS  27
+		#else
+			#define MAX_CMDS  26
+		#endif
+	#else
+		#ifdef SET_IRED
+			#define MAX_CMDS  26
+		#else
+			#define MAX_CMDS  25
+		#endif
+	#endif
 #endif
 #define MAX_LIST          25
 #define MAX_BAND           4
@@ -241,6 +274,16 @@ typedef struct {
 	char name[MAX_SIZE_NAME];
 } rec_t;
 #pragma pack(pop)
+
+#pragma pack(push,1)
+typedef struct {
+	uint16_t blockA;
+	uint16_t blockB;
+	uint16_t blockC;
+	uint16_t blockD;
+} blocks_t;
+#pragma pack(pop)
+
 
 
 
@@ -301,18 +344,18 @@ extern char rxBuf[MAX_UART_BUF];
 extern uint32_t spi_cnt;
 extern volatile uint8_t spiRdy;
 
-#ifdef SET_RDA_CHIP
-	extern volatile uint8_t i2cRdy;
-	extern float lBand, rBand;
-	extern uint8_t Volume;
-	extern uint8_t BassBoost;
-	extern uint8_t Band;// = 2;
+#ifdef SET_RDS
+	#define RDA5807M_BLERB_MASK     3
+	#define RDS_ALL_GROUPTYPE_MASK  0xF000
+	#define RDS_ALL_GROUPTYPE_SHIFT 12
+	#define RDS_ALL_GROUPVER        0x800
 #endif
+extern volatile uint8_t i2cRdy;
+extern float lBand, rBand;
+extern uint8_t Volume;
+extern uint8_t BassBoost;
+extern uint8_t Band;// = 2;
 
-
-#if defined(SET_BLE) || defined(SET_AUDIO)
-
-#define MAX_QREC 16
 
 #pragma pack(push,1)
 typedef struct rec_evt_t {
@@ -320,6 +363,11 @@ typedef struct rec_evt_t {
 	uint32_t attr;
 } rec_evt_t;
 #pragma pack(pop)
+
+
+#if defined(SET_BLE) || defined(SET_AUDIO)
+
+#define MAX_QREC 16
 
 #pragma pack(push,1)
 typedef struct rec_msg_t {

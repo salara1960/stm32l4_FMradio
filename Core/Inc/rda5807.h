@@ -1,10 +1,9 @@
 #ifndef _RDA5807_H
 #define _RDA5807_H
 
-//#include "stm32f0xx_hal.h"
+
 #include "hdr.h"
 
-#ifdef SET_RDA_CHIP
 
 //#define SET_RDA_DEBUG
 
@@ -84,8 +83,7 @@ typedef struct {
 } tReg06h;      // 
 
 typedef struct {
-    uint16_t bFREQ_MODE
-            :1;     // 00 If 1, then freq setting changed (Freq = 76000(or 87000) kHz + freq_direct (08H) kHz)
+    uint16_t bFREQ_MODE         :1;     // 00 If 1, then freq setting changed (Freq = 76000(or 87000) kHz + freq_direct (08H) kHz)
     uint16_t bSOFTBLEND_EN      :1;     // 01 Softblend enable
     uint16_t bSEEK_TH_OLD       :6;     // 2-7 Seek threshold for old seek mode, Valid when Seek_Mode=001
     uint16_t bRSVD1             :1;     // 08 Resvered
@@ -98,9 +96,9 @@ typedef struct {
 
 typedef struct {
     uint16_t bREADCHAN  :10;    // 0-9 Read Channel.
-    // BAND = 0         Frequency = Channel Spacing (kHz) x READCHAN[9:0]+ 87.0 MHz
-    // BAND = 1 or 2    Frequency = Channel Spacing (kHz) x READCHAN[9:0]+ 76.0 MHz
-    // BAND = 3         Frequency = Channel Spacing (kHz) x READCHAN[9:0]+ 65.0 MHz
+    			// BAND = 0         Frequency = Channel Spacing (kHz) x READCHAN[9:0]+ 87.0 MHz
+    			// BAND = 1 or 2    Frequency = Channel Spacing (kHz) x READCHAN[9:0]+ 76.0 MHz
+    			// BAND = 3         Frequency = Channel Spacing (kHz) x READCHAN[9:0]+ 65.0 MHz
     uint16_t bST        :1;     // 10 Stereo Indicator (0 = Mono; 1 = Stereo)
     uint16_t bBLK_E     :1;     // 11 When RDS enable (1 = Block E has been found; 0 = no Block E has been found)
     uint16_t bRDSS      :1;     // 12 RDS Synchronization (0 = RDS decoder not synchronized(default);
@@ -172,8 +170,6 @@ typedef union
 } tRDA5807_RegFile;
 */
 
-//extern uint8_t Band;
-//extern uint8_t Step;
 
 
 // Процедура меняет местами байты попарно в буфере pBuff
@@ -231,10 +227,9 @@ bool rda5807_Get_StereoMonoFlag();
 uint16_t rda5807_Get_Channel();
 uint8_t rda5807_Set_Band(uint8_t band);
 void rda5807_Set_Mute(uint8_t mute);
-//bool rda5807_Get_RDSReady(bool *sync);
-bool rda5807_Get_RDSData(uint8_t *data, bool *sync);
+bool rda5807_Get_RDSReady();
+bool rda5807_Get_RDSData(uint8_t *data);//, bool *sync);
+uint16_t rda5807_Get_reg0B();
 
-
-#endif
 
 #endif

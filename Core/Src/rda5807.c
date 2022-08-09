@@ -1,6 +1,5 @@
 #include "hdr.h"
 
-#ifdef SET_RDA_CHIP
 
 #include "main.h"
 #include "rda5807.h"
@@ -302,11 +301,11 @@ void rda5807_SetupDefault()
     Buffs.Reg04.bRSVD3 = 0;
     // Регистр 0x05
     Buffs.Reg05.bVOLUME = 0;
-    Buffs.Reg05.bANT_GAIN = 0;
-    Buffs.Reg05.bANT_TYPE = ANT_TYPE_Both;//ANT_TYPE_External;//ANT_TYPE_Headphones;//ANT_TYPE_Both;
-    Buffs.Reg05.bSEEKTH = 8;
+    Buffs.Reg05.bANT_GAIN = 1;//0;
+    Buffs.Reg05.bANT_TYPE = ANT_TYPE_External;//ANT_TYPE_Headphones;//ANT_TYPE_Both;
+    Buffs.Reg05.bSEEKTH = 6;//8;
     Buffs.Reg05.bRSVD3 = 0;
-    Buffs.Reg05.bINT_MODE = 1;
+    Buffs.Reg05.bINT_MODE = 0;//1;
     // Регистр 0x06
     Buffs.Reg06.bRSVD1 = 0;
     Buffs.Reg06.bOPEN_MODE = 0;
@@ -560,32 +559,36 @@ void rda5807_Set_Mute(uint8_t mute)
 	rda5807_write(2, (uint16_t *)&Buffs.Reg02, 1);
 }
 //==============================================================================
-/*
-bool rda5807_Get_RDSReady(bool *sync)
+bool rda5807_Get_RDSReady()
 {
 	rda5807_read(0x0A, (uint16_t *)&Buffs.Reg0A, 1);
 
-	*sync = Buffs.Reg0A.bRDSS;
-
-	return Buffs.Reg0A.bRDSR;
+	if (Buffs.Reg0A.bRDSS && Buffs.Reg0A.bRDSR)
+		return true;
+	else
+		return false;
 }
-*/
 //==============================================================================
-bool rda5807_Get_RDSData(uint8_t *data, bool *sync)
+bool rda5807_Get_RDSData(uint8_t *data)//, bool *sync)
 {
-	rda5807_read(0x0A, (uint16_t *)&Buffs.Reg0A, 1);
+//	rda5807_read(0x0A, (uint16_t *)&Buffs.Reg0A, 1);
 
-	*sync = Buffs.Reg0A.bRDSS;
+//	*sync = Buffs.Reg0A.bRDSS;
 
-	if (Buffs.Reg0A.bRDSR) rda5807_read(0x0C, (uint16_t *)data, 4);
+//	if (Buffs.Reg0A.bRDSR)
+		rda5807_read(0x0C, (uint16_t *)data, 4);
 
-	return Buffs.Reg0A.bRDSR;
+	return true;//Buffs.Reg0A.bRDSR;
+}
+//==============================================================================
+uint16_t rda5807_Get_reg0B()
+{
+uint16_t ret = 0;
+
+    rda5807_read(0x0B, &ret, 1);
+
+    return ret;
 }
 //==============================================================================
 
 
-//bREADCHAN
-
-
-
-#endif
