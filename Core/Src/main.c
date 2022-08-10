@@ -128,7 +128,8 @@ const osSemaphoreAttr_t itSem_attributes = {
 //const char *ver = "1.8.2 05.08.22";//fixed minor error from portBLE at startup (when power on)
 //const char *ver = "1.8.3 07.08.22";//set ANT_TYPE to External
 //const char *ver = "1.8.4 08.08.22";
-const char *ver = "1.8.5 09.08.22";//add new command for support infrared
+//const char *ver = "1.8.5 09.08.22";//add new command for support infrared
+const char *ver = "1.8.6 10.08.22";//add new radio_station in play_list
 
 
 
@@ -179,7 +180,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1660052289;//1659974469;//1659886879;//1659874060;//1659702715;//1659624810;
+static uint32_t epoch = 1660165305;//1660052289;//1659974469;//1659886879;//1659874060;//1659702715;//1659624810;
 //1659614411;//1659558535;//1659552520;//1659535529;//1659476485;//1659465512;//1659390226;//1659381664;
 //1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
@@ -317,13 +318,14 @@ static const rec_t def_list[MAX_LIST] = {
 	{3, 68.5, "Маяк"},// Маяк
 	{3, 72.1, "Шансон"},// Шансон
 	//Band:2,1 76-108, 87-108
+	{2, 92.8, "Радио_DFM"},//Радио DFM в Калининграде
 	{2, 93.6, "Радио_7"},// Радио 7
 	{2, 94.0, "Комеди_Радио"},// Комеди Радио
 	{2, 95.1, "Вести_ФМ"},// Вести ФМ
 	{2, 95.5, "Ретро_ФМ"},// Ретро ФМ
 	{2, 96.3, "Русское_Радио"},// Русское Радио
 	{2, 97.0, "Радио_Вера"},// Радио Книга
-	{2, 97.9, "Серебр.Дождь"},// Серебрянный Дождь
+	{2, 97.7, "Серебр.Дождь"},// Серебрянный Дождь
 	{2, 98.5, "Радио_Энергия"},// Радио Энергия
 	{2, 99.5, "Радио_Звезда"},// Радио Звезда
 	{2, 100.1, "Авто_Радио"},// АвтоРадио
@@ -2015,9 +2017,7 @@ void irdTask(void *argument)
 
   ird_exit = true;
 
-  HAL_Delay(200);
-
-  osThreadExit();
+  vTaskDelete(NULL);//osThreadExit();
 
 #endif
 }
@@ -2058,13 +2058,14 @@ void StartTask(void *argument)
     		W25qxx_WriteSector((uint8_t *)&def_list[0].band, cfgSector, 0, listSize);
     		Report(1, "Writen cfg_stations_data (%lu bytes) to cfgSector #%lu\r\n", listSize, cfgSector);
       	}
-    } else {//in sector	present any data
+    }
+    if (!W25qxx_IsEmptySector(cfgSector, 0, listSize)) {//in sector	present any data
     	if (!(devError & devSPI)) {
     		W25qxx_ReadSector((uint8_t *)&list[0].band, cfgSector, 0, listSize);
     		Report(1, "Readed cfg_stations_data (%lu bytes) from cfgSector #%lu\r\n", listSize, cfgSector);
-      	} else {
-      		memcpy((uint8_t *)&list[0].band, (uint8_t *)&def_list[0].band, listSize);
-      	}
+    	} else {
+    		memcpy((uint8_t *)&list[0].band, (uint8_t *)&def_list[0].band, listSize);
+    	}
     }
 #endif
 

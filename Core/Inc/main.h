@@ -257,7 +257,7 @@ enum {
 		#endif
 	#endif
 #endif
-#define MAX_LIST          25
+#define MAX_LIST          26//25
 #define MAX_BAND           4
 #define MAX_STEP           4
 
