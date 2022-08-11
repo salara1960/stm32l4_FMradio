@@ -129,7 +129,8 @@ const osSemaphoreAttr_t itSem_attributes = {
 //const char *ver = "1.8.3 07.08.22";//set ANT_TYPE to External
 //const char *ver = "1.8.4 08.08.22";
 //const char *ver = "1.8.5 09.08.22";//add new command for support infrared
-const char *ver = "1.8.6 10.08.22";//add new radio_station in play_list
+//const char *ver = "1.8.6 10.08.22";//add new radio_station in play_list
+const char *ver = "1.9 11.08.22";//rds support - done !
 
 
 
@@ -180,7 +181,8 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1660165305;//1660052289;//1659974469;//1659886879;//1659874060;//1659702715;//1659624810;
+static uint32_t epoch = 1660232569;
+//1660165305;//1660052289;//1659974469;//1659886879;//1659874060;//1659702715;//1659624810;
 //1659614411;//1659558535;//1659552520;//1659535529;//1659476485;//1659465512;//1659390226;//1659381664;
 //1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
 //1658961169;//1658870659;//1658868340;//1658836899;//1658775452;//1658774189;//1658673059;//1658665853;
@@ -416,6 +418,54 @@ const char *allBands[MAX_BAND] = {
 
 uint8_t prio = 0;
 volatile bool ird_exit = true;
+
+
+#ifdef SET_RDS
+
+	const char *namePTy[MAX_SPTY] = {
+		"No program type or undefined",
+		"News",
+		"Current affairs",
+		"Information",
+		"Sport",
+		"Education",
+		"Drama",
+		"Culture",
+		"Science",
+		"Varied",
+		"Pop music",
+		"Rock music",
+		"Easy listening",
+		"Light classical",
+		"Serious classical",
+		"Other music",
+		"Weather",
+		"Finance",
+		"Children’s programs",
+		"Social affairs",
+		"Religion",
+		"Phone-in",
+		"Travel",
+		"Leisure",
+		"Jazz music",
+		"Country music",
+		"National music",
+		"Oldies music",
+		"Folk music",
+		"Documentary",
+		"Alarm test",
+		"Alarm"
+	};
+	uint16_t sID = 0; // ID радиостанции
+	uint16_t MaybeThisIDIsReal = 0; // Предыдущее значение ID
+	uint8_t IDRepeatCounter = 0; // Счетчик повторений ID
+	uint8_t errLevelB, errLevelC, errLevelD, groupType, groupVer;
+	uint8_t PTy = 255;
+	bool PTy_printed = false;
+	char PSName[9]; // Значение PSName
+	char PSName_prev[9];
+	uint8_t PSNameUpdated = 0; // Для отслеживания изменений в PSName
+#endif
 
 /* USER CODE END PV */
 
@@ -1525,6 +1575,43 @@ void Report(const uint8_t addTime, const char *fmt, ...)
 
 }
 //-------------------------------------------------------------------------------------------
+#ifdef SET_RDS
+//-------------------------------------------------------------------------------------------
+void MJDDecode(unsigned long MJD, uint16_t *y, uint8_t *m, uint8_t *d)
+{
+unsigned long L = 2400000 + MJD + 68570;
+unsigned long N = (L * 4) / 146097;
+
+	L -= ((146097.0 * N + 3) / 4);
+	uint16_t year = 4000 * (L + 1) / 1461001;
+	L -= (1461 * year / 4 + 31);
+	uint8_t month = 80.0 * L / 2447.0;
+	uint8_t day = L - 2447 * month / 80;
+	L = month / 11;
+	month = month + 2 - 12 * L;
+	year = 100 * (N - 49) + year + L;
+	*y = year;
+	*m = month;
+	*d = day;
+}
+//-------------------------------------------------------------------------------------------
+void rds_init()
+{
+//
+	sID = 0;
+	MaybeThisIDIsReal = 0;
+	IDRepeatCounter = 0;
+	errLevelB = 0, errLevelC = 0, errLevelD = 0, groupType = 0, groupVer = 0;
+	PTy = 255;
+	PTy_printed = false;
+	memset(PSName, 0, sizeof(PSName)); // Значение PSName
+	memset(PSName_prev, 0, sizeof(PSName));
+	PSNameUpdated = 0;
+//
+}
+//-------------------------------------------------------------------------------------------
+
+#endif
 //-------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------
@@ -2065,6 +2152,7 @@ void StartTask(void *argument)
     		Report(1, "Readed cfg_stations_data (%lu bytes) from cfgSector #%lu\r\n", listSize, cfgSector);
     	} else {
     		memcpy((uint8_t *)&list[0].band, (uint8_t *)&def_list[0].band, listSize);
+    		Report(1, "Copy cfg_stations_data (%lu bytes) from def_list\r\n", listSize);
     	}
     }
 #endif
@@ -2155,11 +2243,7 @@ Chan = rda5807_Get_Channel();
     const uint64_t rdsWait = _30ms;
     bool rdsFlag = false;
     uint64_t rdsTime = 0;
-    uint16_t sID = 0; // ID радиостанции
-    uint16_t MaybeThisIDIsReal = 0; // Предыдущее значение ID
-    uint8_t IDRepeatCounter = 0; // Счетчик повторений ID
-    const uint8_t REPEATS_TO_BE_REAL_ID = 3;
-    uint8_t errLevelB, groupType, groupVer;
+    rds_init();
 #endif
 
 	evts.evt = evt_Freq;
@@ -2196,6 +2280,7 @@ Chan = rda5807_Get_Channel();
 #endif
 #ifdef SET_RDS
     			case evt_Rds:
+    				rds_init();
     				if (!rdsFlag) {
     					Report(1, "[que:%u] RDS monitoring start\r\n", cntEvt);
     					rdsFlag = true;
@@ -2204,10 +2289,6 @@ Chan = rda5807_Get_Channel();
     					Report(1, "[que:%u] RDS monitoring stop\r\n", cntEvt);
     					rdsFlag = false;
     					rdsTime = 0;
-    					//
-    					sID = 0;
-    					MaybeThisIDIsReal = 0;
-    					IDRepeatCounter = 0;
     				}
     			break;
 #endif
@@ -2335,12 +2416,12 @@ Chan = rda5807_Get_Channel();
 
     						sprintf(sta, "%s", nameStation(Freq));
     						showLine(sta, lin6, &lia, true);
-    						Report(1, "[que:%u] set new Freq to %.1f %s (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
+    						Report(1, "[que:%u] set new Freq to %.1f '%s' (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
 #ifdef SET_RDS
-    						sID = 0;
-    						MaybeThisIDIsReal = 0;
-    						IDRepeatCounter = 0;
-    						errLevelB = 0;
+    						if (rdsFlag) {
+    							rds_init();
+    							rdsTime = get_mstmr(rdsWait);
+    						}
 #endif
     					}
     				}
@@ -2536,40 +2617,130 @@ Chan = rda5807_Get_Channel();
 #ifdef SET_RDS
     	if (rdsFlag && rdsTime) {
     		if (check_mstmr(rdsTime)) {
+    			rdsTime = get_mstmr(rdsWait);
     			if (!readyRds && rda5807_Get_RDSReady()) {
     				memset(dataRDS, 0, sizeof(dataRDS));
-    				rda5807_Get_RDSData(dataRDS);
     				blk = (blocks_t *)&dataRDS;
-    				Report(1, "[RDS] %04X %04X %04X %04X\r\n", blk->blockA, blk->blockB, blk->blockC, blk->blockD);
+    				blk->blockA = rda5807_Get_reg(RDA5807M_REG_BLOCK_A);
+    				//Report(1, "[RDS] %04X %04X %04X %04X\r\n", blk->blockA, blk->blockB, blk->blockC, blk->blockD);
+    				//
 
     				// Сравним содержимое блока A (ID станции) с предыдущим значением
     				if (blk->blockA == MaybeThisIDIsReal) {
     					if (IDRepeatCounter < REPEATS_TO_BE_REAL_ID) {
     						IDRepeatCounter++; // Значения совпадают, отразим это в счетчике
-    						if (IDRepeatCounter == REPEATS_TO_BE_REAL_ID)
-    							sID = MaybeThisIDIsReal; // Определились с ID станции
+    						if (IDRepeatCounter == REPEATS_TO_BE_REAL_ID) sID = MaybeThisIDIsReal;// Определились с ID станции
     				    }
     				} else {
     					IDRepeatCounter = 0; // Значения не совпадают, считаем заново
     					MaybeThisIDIsReal = blk->blockA;
     				}
     				//
-    				tmp[0] = '\0';
+    				if (!sID || (blk->blockA != sID)) {//Пока не определимся с ID, разбирать RDS не будем
+    												   //ID не совпадает. Пропустим эту RDS группу
+    					continue;
+    				}
     				// ID станции не скачет, вероятность корректности группы в целом выше
-    				errLevelB = (rda5807_Get_reg0B() & RDA5807M_BLERB_MASK);
+    				//Report(1, "[RDS] ID:0x%X\r\n", sID);
+    				//
+    				errLevelB = rda5807_Get_reg(0x0B) & RDA5807M_BLERB_MASK;
     				if (errLevelB < 3) {
     					// Блок B корректный, можем определить тип и версию группы
+    					blk->blockB = rda5807_Get_reg(RDA5807M_REG_BLOCK_B);
+    					if (!PTy_printed) { // Но сначала считаем PTy
+    						if (PTy == (blk->blockB & RDS_ALL_PTY_MASK) >> RDS_ALL_PTY_SHIFT) {
+    							Report(1, "[RDS] PlayType: %s\r\n", namePTy[PTy]);
+    							PTy_printed = true;
+    						} else {
+    							PTy = (blk->blockB & RDS_ALL_PTY_MASK) >> RDS_ALL_PTY_SHIFT;
+    				        }
+    				    }
     					groupType = (blk->blockB & RDS_ALL_GROUPTYPE_MASK) >> RDS_ALL_GROUPTYPE_SHIFT;
     					groupVer = (blk->blockB & RDS_ALL_GROUPVER) > 0;
-    					sprintf(tmp, "Group: %u %c", groupType, 'A'+groupVer);
+    					uint16_t reg10 = rda5807_Get_reg(RDA5807M_REG_BLER_CD);//getRegister(RDA5807M_REG_BLER_CD);
+    					errLevelC = (reg10 & RDA5807M_BLERC_MASK) >> RDA5807M_BLERC_SHIFT;
+    					errLevelD = (reg10 & RDA5807M_BLERD_MASK) >> RDA5807M_BLERD_SHIFT;
+    					// ************* 0A, 0B - PSName, PTY ************
+    					if ((groupType == 0) && (errLevelD < 3)) {
+    						// Сравним новые символы PSName со старыми:
+    						blk->blockD = rda5807_Get_reg(RDA5807M_REG_BLOCK_D);
+    						char c = blk->blockD >> 8; // новый символ
+    						uint8_t i = (blk->blockB & RDS_GROUP0_C1C0_MASK) << 1; // его позиция в PSName
+    						if (PSName[i] != c) { // символы различаются
+    							PSNameUpdated &= ~(1 << i);//!(1 << i); // сбросим флаг в PSNameUpdated
+    							PSName[i] = c;
+    						} else {// символы совпадают, установим флаг в PSNameUpdated:
+    							PSNameUpdated |= 1 << i;
+    				        }
+    						// Аналогично для второго символа
+    						c = blk->blockD & 255;
+    						i++;
+    						if (PSName[i] != c) {
+    							PSNameUpdated &= ~(1 << i);//!(1 << i);
+    							PSName[i] = c;
+    				        } else {
+    				        	PSNameUpdated |= 1 << i;
+    				        }
+    						// Когда все 8 флагов в PSNameUpdated установлены, считаем что PSName получено полностью
+    						if (PSNameUpdated == 255) {
+    							// Дополнительное сравнение с предыдущим значением
+    							if (strcmp(PSName, PSName_prev) != 0) {
+    								Report(1, "[RDS] Station: %s\r\n", PSName);
+    								strcpy(PSName_prev, PSName);
+    								//
+#ifdef SET_DISPLAY
+    								ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - lfnt->FontHeight, SCREEN_WIDTH - 1, lfnt->FontHeight, PIX_OFF);
+    								int dl = sprintf(tmp, "RDS : %s", PSName);
+    								int x = ((SCREEN_WIDTH - (lfnt->FontWidth * dl)) >> 1) & 0x7f;
+    								ST7565_Print(x, SCREEN_HEIGHT - lfnt->FontHeight, tmp, lfnt, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
+    								ST7565_Update();
+#endif
+    								//
+    				        	}
+    				        }
+    				    } // PSName, PTy end
+    					// ******** 4A - Clock time and date ********
+    					if ((groupType == 4) && (groupVer == 0) && (errLevelC < 3) && (errLevelD < 3)) {
+    						blk->blockC = rda5807_Get_reg(RDA5807M_REG_BLOCK_C);
+    						blk->blockD = rda5807_Get_reg(RDA5807M_REG_BLOCK_D);
+    						uint16_t year;
+    						uint8_t month, day;
+    						unsigned long MJD = (blk->blockB & RDS_GROUP4A_MJD15_16_MASK);
+    						MJD = (MJD << 15) | (blk->blockC >> RDS_GROUP4A_MJD0_14_SHIFT);
+    						Report(1, "[RDS] Date: ");
+    						if ((MJD < 58844) || (MJD > 62497)) {
+    							Report(0, "decode error\r\n");
+    				        } else {
+    				        	MJDDecode(MJD, &year, &month, &day);
+    				        	if ((day <= 31) && (month <= 12)) {
+    				        		Report(0, "%02u.%02u.%04u\r\n", day, month, year);
+    				            } else {
+    				            	Report(0, "decode error\r\n");
+    				            }
+    				        }
+    						uint8_t hours = (blk->blockC & RDS_GROUP4A_HOURS4_MASK) << 4;
+    						hours |= (blk->blockD & RDS_GROUP4A_HOURS0_3_MASK) >> RDS_GROUP4A_HOURS0_3_SHIFT;
+    						uint8_t minutes = (blk->blockD & RDS_GROUP4A_MINUTES_MASK) >> RDS_GROUP4A_MINUTES_SHIFT;
+    						if ((hours > 23) || (minutes > 59))
+    							Report(1, "[RDS] Time: decode error\r\n");
+    				        else {
+    				        	long timeInMinutes = hours * 60 + minutes;
+    				        	//uint8_t LTO = blk->blockD & RDS_GROUP4A_LTO_MASK;
+    				        	if (blk->blockD & RDS_GROUP4A_LTO_SIGN_MASK) {
+    				        		timeInMinutes -= (blk->blockD & RDS_GROUP4A_LTO_MASK) * 30;
+    				        		if (timeInMinutes < 0) timeInMinutes += 60 * 24;
+    				            } else {
+    				            	timeInMinutes += (blk->blockD & RDS_GROUP4A_LTO_MASK) * 30;
+    				            	if (timeInMinutes > 60 * 24) timeInMinutes -= 60 * 24;
+    				            }
+    				        	hours = timeInMinutes / 60;
+    				        	minutes = timeInMinutes % 60;
+    				        	Report(1, "[RDS] Time: %02u:%02u\r\n", hours, minutes);
+    				        }
+    				    }
     				}
-    				if ((sID == 0) || (blk->blockA != sID)) strcat(tmp, " - invalid group");
-    				else
-    				if (strlen(tmp)) Report(1, "%s\r\n", tmp);
-    				//
     			}
     			readyRds = rda5807_Get_RDSReady();
-    			rdsTime = get_mstmr(rdsWait);
     		}
     	}
 #endif

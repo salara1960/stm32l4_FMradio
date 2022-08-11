@@ -345,10 +345,60 @@ extern uint32_t spi_cnt;
 extern volatile uint8_t spiRdy;
 
 #ifdef SET_RDS
-	#define RDA5807M_BLERB_MASK     3
-	#define RDS_ALL_GROUPTYPE_MASK  0xF000
-	#define RDS_ALL_GROUPTYPE_SHIFT 12
-	#define RDS_ALL_GROUPVER        0x800
+	// регистры RDS data
+	#define RDA5807M_REG_BLER_CD 0x10
+	#define RDA5807M_REG_BLOCK_A 0x0C
+	#define RDA5807M_REG_BLOCK_B 0x0D
+	#define RDA5807M_REG_BLOCK_C 0x0E
+	#define RDA5807M_REG_BLOCK_D 0x0F
+	// флаги
+	#define RDA5807M_FLG_DHIZ   0x8000
+	#define RDA5807M_FLG_DMUTE  0x4000
+	#define RDA5807M_FLG_SEEK   0x0100
+	#define RDA5807M_FLG_SEEKUP 0x0200
+	#define RDA5807M_FLG_ENABLE 0x0001
+	#define RDA5807M_FLG_TUNE   0x0010
+	#define RDA5807M_FLG_RDS    0x0008
+	#define RDA5807M_FLAG_RDSR  0x8000
+	#define RDA5807M_FLAG_STC   0x4000
+	//маски
+	#define RDA5807M_CHAN_MASK    0xFFC0
+	#define RDA5807M_CHAN_SHIFT   6
+	#define RDA5807M_VOLUME_MASK  0x000F
+	#define RDA5807M_VOLUME_SHIFT 0
+	#define RDA5807M_BLERA_MASK   0x000C
+	#define RDA5807M_BLERA_SHIFT  2
+	#define RDA5807M_BLERB_MASK   0x0003
+	#define RDA5807M_BLERC_MASK   0xC000
+	#define RDA5807M_BLERC_SHIFT  14
+	#define RDA5807M_BLERD_MASK   0x3000
+	#define RDA5807M_BLERD_SHIFT  12
+	//группы RDS
+	#define RDS_ALL_GROUPTYPE_MASK    0xF000
+	#define RDS_ALL_GROUPTYPE_SHIFT   12
+	#define RDS_ALL_GROUPVER          0x800
+	#define RDS_ALL_TP                0x400
+	#define RDS_ALL_PTY_MASK          0x3E0
+	#define RDS_ALL_PTY_SHIFT         5
+	#define RDS_GROUP0_TA             4
+	#define RDS_GROUP0_MS             3
+	#define RDS_GROUP0_DI             2
+	#define RDS_GROUP0_C1C0_MASK      3
+	#define RDS_GROUP4A_MJD15_16_MASK 3
+	//#define RDS_GROUP4A_MJD0_14_MASK 0xFFFE
+	#define RDS_GROUP4A_MJD0_14_SHIFT  1
+	#define RDS_GROUP4A_HOURS4_MASK    1
+	#define RDS_GROUP4A_HOURS0_3_MASK  0xF000
+	#define RDS_GROUP4A_HOURS0_3_SHIFT 12
+	#define RDS_GROUP4A_MINUTES_MASK   0x0FC0
+	#define RDS_GROUP4A_MINUTES_SHIFT  6
+	#define RDS_GROUP4A_LTO_SIGN_MASK  0x0020
+	#define RDS_GROUP4A_LTO_MASK       0x001F
+	#define RDS_GROUP2_ABFLAG_MASK     0x0010
+	#define RDS_GROUP2_ADDRESS_MASK    0x000F
+	//
+	#define MAX_SPTY                   32
+	#define REPEATS_TO_BE_REAL_ID      3
 #endif
 extern volatile uint8_t i2cRdy;
 extern float lBand, rBand;
