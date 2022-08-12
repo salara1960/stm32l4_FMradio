@@ -130,7 +130,8 @@ const osSemaphoreAttr_t itSem_attributes = {
 //const char *ver = "1.8.4 08.08.22";
 //const char *ver = "1.8.5 09.08.22";//add new command for support infrared
 //const char *ver = "1.8.6 10.08.22";//add new radio_station in play_list
-const char *ver = "1.9 11.08.22";//rds support - done !
+//const char *ver = "1.9 11.08.22";//rds support - done !
+const char *ver = "1.9.1 12.08.22";//rds - set on by start
 
 
 
@@ -181,7 +182,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1660232569;
+static uint32_t epoch = 1660296769;//1660238159;//1660232569;
 //1660165305;//1660052289;//1659974469;//1659886879;//1659874060;//1659702715;//1659624810;
 //1659614411;//1659558535;//1659552520;//1659535529;//1659476485;//1659465512;//1659390226;//1659381664;
 //1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
@@ -2243,7 +2244,10 @@ Chan = rda5807_Get_Channel();
     const uint64_t rdsWait = _30ms;
     bool rdsFlag = false;
     uint64_t rdsTime = 0;
-    rds_init();
+    //rds_init();
+    //
+    evts.evt = evt_Rds;
+    if (osMessageQueuePut(evtQueHandle, (const void *)&evts, prio, 20) != osOK) devError |= devEVT;
 #endif
 
 	evts.evt = evt_Freq;
@@ -2452,6 +2456,13 @@ Chan = rda5807_Get_Channel();
     						sprintf(sta, "%s", nameStation(Freq));
     						showLine(sta, lin6, &lia, true);
     						Report(1, "[que:%u] set new Freq to %.1f %s (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
+    						//
+#ifdef SET_RDS
+    						if (rdsFlag) {
+    							rds_init();
+    							rdsTime = get_mstmr(rdsWait);
+    						}
+#endif
     					}
     				}
     				//
@@ -2689,8 +2700,10 @@ Chan = rda5807_Get_Channel();
     								strcpy(PSName_prev, PSName);
     								//
 #ifdef SET_DISPLAY
+    								int lens = strlen(PSName);
+    								if (lens > 15) lens = 15;
     								ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - lfnt->FontHeight, SCREEN_WIDTH - 1, lfnt->FontHeight, PIX_OFF);
-    								int dl = sprintf(tmp, "RDS : %s", PSName);
+    								int dl = sprintf(tmp, "RDS : %.*s", lens, PSName);
     								int x = ((SCREEN_WIDTH - (lfnt->FontWidth * dl)) >> 1) & 0x7f;
     								ST7565_Print(x, SCREEN_HEIGHT - lfnt->FontHeight, tmp, lfnt, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
     								ST7565_Update();
