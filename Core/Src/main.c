@@ -58,6 +58,7 @@ DMA_HandleTypeDef hdma_spi2_tx;
 
 TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim8;
 
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
@@ -131,7 +132,8 @@ const osSemaphoreAttr_t itSem_attributes = {
 //const char *ver = "1.8.5 09.08.22";//add new command for support infrared
 //const char *ver = "1.8.6 10.08.22";//add new radio_station in play_list
 //const char *ver = "1.9 11.08.22";//rds support - done !
-const char *ver = "1.9.1 12.08.22";//rds - set on by start
+//const char *ver = "1.9.1 12.08.22";//rds - set on by start
+const char *ver = "2.0 12.08.22";//add encoder !!!
 
 
 
@@ -182,7 +184,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1660296769;//1660238159;//1660232569;
+static uint32_t epoch = 1660342580;//1660296769;//1660238159;//1660232569;
 //1660165305;//1660052289;//1659974469;//1659886879;//1659874060;//1659702715;//1659624810;
 //1659614411;//1659558535;//1659552520;//1659535529;//1659476485;//1659465512;//1659390226;//1659381664;
 //1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
@@ -229,6 +231,12 @@ const char *s_cmds[MAX_CMDS] = {
 #ifdef SET_IRED
 	,"ired"
 #endif
+#ifdef SET_ENC
+	,
+	"enckey",
+	"encinc",
+	"encdec"
+#endif
 };
 const char *str_cmds[MAX_CMDS] = {
 	"Help",
@@ -264,6 +272,12 @@ const char *str_cmds[MAX_CMDS] = {
 	"queCmd"
 #ifdef SET_IRED
 	,"iredShow"
+#endif
+#ifdef SET_ENC
+	,
+	"encKey",
+	"encInc",
+	"encDec"
 #endif
 };
 
@@ -468,6 +482,18 @@ volatile bool ird_exit = true;
 	uint8_t PSNameUpdated = 0; // Для отслеживания изменений в PSName
 #endif
 
+
+#ifdef SET_ENC
+	TIM_HandleTypeDef *encPort = &htim8;
+	uint32_t tikStart = 0;
+	bool encKeyPressed = false;
+	uint32_t Encoder = MIN_ENC_VALUE;
+	uint32_t lastEncoder = MIN_ENC_VALUE;
+	uint32_t encKeyCnt = 0;
+	uint8_t encKeyCntTmp = 0;
+	GPIO_PinState encState = GPIO_PIN_SET;
+#endif
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -482,6 +508,7 @@ static void MX_SPI1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_TIM8_Init(void);
 void StartTask(void *argument);
 
 /* USER CODE BEGIN PFP */
@@ -638,6 +665,7 @@ int main(void)
   MX_I2C1_Init();
   MX_USART3_UART_Init();
   MX_TIM6_Init();
+  MX_TIM8_Init();
   /* USER CODE BEGIN 2 */
 
 
@@ -647,6 +675,13 @@ int main(void)
 #if defined(SET_BLE) || defined(SET_AUDIO)
     if (HAL_UART_Receive_IT(blePort, &rxbByte, 1) != HAL_OK) devError |= devBLE;
 #endif
+
+#ifdef SET_ENC
+    HAL_TIM_Encoder_Start_IT(encPort, TIM_CHANNEL_ALL);
+    HAL_Delay(100);
+    lastEncoder = Encoder = encPort->Instance->CNT;//TIM8->CNT;
+#endif
+
 
     for (int8_t i = 0; i < 4; i++) {
     	errLedOn(true);
@@ -683,8 +718,8 @@ int main(void)
   /* creation of evtQue */
   evtQueHandle = osMessageQueueNew (8, sizeof(rec_evt_t), &evtQue_attributes);
 
-#if defined(SET_BLE) || defined(SET_AUDIO)
   /* creation of cmdQue */
+#if defined(SET_BLE) || defined(SET_AUDIO)
   cmdQueHandle = osMessageQueueNew (8, sizeof(rec_msg_t), &cmdQue_attributes);
 
   /* creation of ackQue */
@@ -1053,6 +1088,57 @@ static void MX_TIM6_Init(void)
 }
 
 /**
+  * @brief TIM8 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM8_Init(void)
+{
+
+  /* USER CODE BEGIN TIM8_Init 0 */
+
+  /* USER CODE END TIM8_Init 0 */
+
+  TIM_Encoder_InitTypeDef sConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM8_Init 1 */
+
+  /* USER CODE END TIM8_Init 1 */
+  htim8.Instance = TIM8;
+  htim8.Init.Prescaler = MIN_ENC_VALUE;
+  htim8.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim8.Init.Period = MAX_ENC_VALUE;
+  htim8.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim8.Init.RepetitionCounter = 0;
+  htim8.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI1;
+  sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC1Filter = 5;
+  sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC2Filter = 5;
+  if (HAL_TIM_Encoder_Init(&htim8, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterOutputTrigger2 = TIM_TRGO2_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim8, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM8_Init 2 */
+
+  /* USER CODE END TIM8_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -1232,6 +1318,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(SPI2_CS_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : ENC_KEY_Pin */
+  GPIO_InitStruct.Pin = ENC_KEY_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(ENC_KEY_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : IRED_Pin */
   GPIO_InitStruct.Pin = IRED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
@@ -1265,6 +1357,9 @@ static void MX_GPIO_Init(void)
 
   HAL_NVIC_SetPriority(EXTI2_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI2_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 6, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
 }
 
@@ -1924,23 +2019,47 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 //--------------------------------------------------------------------------------------------
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+	rec_evt_t ev = {cmdNone, 0};
+#ifdef SET_ENC
+	if (GPIO_Pin == ENC_KEY_Pin) {
+			encState = HAL_GPIO_ReadPin(ENC_KEY_GPIO_Port, ENC_KEY_Pin);
+			if (encState == GPIO_PIN_SET) {//released key
+				if (tikStart) {
+					if ((HAL_GetTick() - tikStart) > TIME_encKeyPressed) {
+						tikStart = 0;
+						encKeyPressed = false;
+						encKeyCnt++;
+						ev.evt = cmdEncKey;
+					}
+				}
+			} else {//pressed key
+				encKeyPressed = true;
+				if (!tikStart) tikStart = HAL_GetTick();
+			}
+			//HAL_GPIO_WritePin(ENC_LED_GPIO_Port, ENC_LED_Pin, encKeyPressed);
+	} else {
+#endif
 #ifdef SET_SLEEP
-	if (sleep_mode) {
-		if ((HAL_GPIO_ReadPin(KEY0_GPIO_Port, KEY0_Pin) == GPIO_PIN_SET) ||
-				(HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_SET)) {
-			sleep_mode = false;
-			HAL_PWR_DisableSleepOnExit();
-			int ev = cmdExitSleep;
-			if (osMessageQueuePut(evtQueHandle, (const void *)&ev, 0, 0)) devError |= devEVT;
+		if (sleep_mode) {
+			if ((HAL_GPIO_ReadPin(KEY0_GPIO_Port, KEY0_Pin) == GPIO_PIN_SET) ||
+					(HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_SET)) {
+				sleep_mode = false;
+				HAL_PWR_DisableSleepOnExit();
+				ev.evt = cmdExitSleep;
+			}
+			return;
 		}
-		return;
+#endif
+		if ((GPIO_Pin == KEY0_Pin) || (GPIO_Pin == KEY1_Pin)) {
+			if (GPIO_Pin == KEY0_Pin) seek_up = 1;
+			else
+			if (GPIO_Pin == KEY1_Pin) seek_up = 0;
+			ev.evt = cmdScan;
+		}
+#ifdef SET_ENC
 	}
 #endif
-	if ((GPIO_Pin == KEY0_Pin) || (GPIO_Pin == KEY1_Pin)) {
-		if (GPIO_Pin == KEY0_Pin) seek_up = 1;
-		else
-		if (GPIO_Pin == KEY1_Pin) seek_up = 0;
-		int ev = cmdScan;
+	if (ev.evt != cmdNone) {
 		if (osMessageQueuePut(evtQueHandle, (const void *)&ev, 0, 0)) devError |= devEVT;
 	}
 }
@@ -2271,6 +2390,17 @@ Chan = rda5807_Get_Channel();
 	#endif
     		}
     		switch (evt) {
+#ifdef SET_ENC
+    			case evt_EncKey:
+    				Report(1, "[que:%u] encKey released now\r\n", cntEvt);
+    			break;
+    			case evt_IncFreq:
+    				Report(1, "[que:%u] incFreq %.2f + step 100Khz = %.2f\r\n", cntEvt, Freq, Freq + 0.1);
+    			break;
+    			case evt_DecFreq:
+    				Report(1, "[que:%u] decFreq %.2f - step 100Khz = %.2f\r\n", cntEvt, Freq, Freq - 0.1);
+    			break;
+#endif
 #ifdef SET_IRED
     			case evt_iRed:
     				if (ired_show) {
@@ -2819,12 +2949,33 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	else
 	if (htim->Instance == TIM4) {
 		msCounter++;//inc_msCounter();
+		rec_evt_t ev = {cmdNone, 0};
+		//
+#ifdef SET_ENC
+		if (!(msCounter % _300ms)) {
+			Encoder = (encPort->Instance->CNT) >> 1;
+			if (lastEncoder != Encoder) {
+				if ((lastEncoder== MIN_ENC_VALUE) && (Encoder == MAX_ENC_VALUE)) ev.evt = cmdDecFreq;//dec
+				else
+				if ((lastEncoder == MAX_ENC_VALUE) && (Encoder == MIN_ENC_VALUE)) ev.evt = cmdIncFreq;//inc
+				else
+				if (lastEncoder < Encoder) ev.evt = cmdIncFreq;//inc
+				else
+				if (lastEncoder > Encoder) ev.evt = cmdDecFreq;//dec
+				lastEncoder = Encoder;
+				if (ev.evt != cmdNone)	{
+					if (osMessageQueuePut(evtQueHandle, (const void *)&ev, 0, 0) != osOK) devError |= devEVT;
+				}
+			}
+		}
+#endif
+		//
 		if (!(msCounter % _1s)) {// 1 seconda
 			secCounter++;
 		  	HAL_GPIO_TogglePin(TIK_LED_GPIO_Port, TIK_LED_Pin);
 #ifdef SET_DISPLAY
 		  	if (startSec) {
-		  		int ev = evt_Sec;
+		  		ev.evt = evt_Sec;
 		  		if (osMessageQueuePut(evtQueHandle, (const void *)&ev, 0, 0) != osOK) devError |= devEVT;
 		  	}
 #endif

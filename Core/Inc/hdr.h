@@ -17,5 +17,7 @@
 #define SET_SLEEP
 #define SET_IRED
 
+#define SET_ENC
+
 
 #endif /* INC_HDR_H_ */

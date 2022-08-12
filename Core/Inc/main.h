@@ -104,6 +104,12 @@ enum {
 #ifdef SET_IRED
 	,cmdiRed
 #endif
+#ifdef SET_ENC
+	,
+	cmdEncKey,
+	cmdIncFreq,
+	cmdDecFreq
+#endif
 };
 
 enum {
@@ -141,6 +147,12 @@ enum {
 	evt_Cmd
 #ifdef SET_IRED
 	,evt_iRed
+#endif
+#ifdef SET_ENC
+	,
+	evt_EncKey,
+	evt_IncFreq,
+	evt_DecFreq
 #endif
 };
 
@@ -231,32 +243,38 @@ enum {
 #ifdef SET_BLE
 	#ifdef SET_RDS
 		#ifdef SET_IRED
-			#define MAX_CMDS  28
+			#define MAX_CMD  28
 		#else
-			#define MAX_CMDS  27
+			#define MAX_CMD  27
 		#endif
 	#else
 		#ifdef SET_IRED
-			#define MAX_CMDS  27
+			#define MAX_CMD  27
 		#else
-			#define MAX_CMDS  26
+			#define MAX_CMD  26
 		#endif
 	#endif
 #else
 	#ifdef SET_RDS
 		#ifdef SET_IRED
-			#define MAX_CMDS  27
+			#define MAX_CMD  27
 		#else
-			#define MAX_CMDS  26
+			#define MAX_CMD  26
 		#endif
 	#else
 		#ifdef SET_IRED
-			#define MAX_CMDS  26
+			#define MAX_CMD  26
 		#else
-			#define MAX_CMDS  25
+			#define MAX_CMD  25
 		#endif
 	#endif
 #endif
+#ifdef SET_ENC
+	#define MAX_CMDS MAX_CMD + 3
+#else
+	#define MAX_CMDS MAX_CMD
+#endif
+
 #define MAX_LIST          26//25
 #define MAX_BAND           4
 #define MAX_STEP           4
@@ -299,6 +317,9 @@ void Report(const uint8_t addTime, const char *fmt, ...);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define MIN_ENC_VALUE 0
+#define MAX_ENC_VALUE 32767
+#define ENC_PERIOD 65535
 #define DISPLAY_ON_Pin GPIO_PIN_0
 #define DISPLAY_ON_GPIO_Port GPIOC
 #define KEY0_Pin GPIO_PIN_1
@@ -319,6 +340,9 @@ void Report(const uint8_t addTime, const char *fmt, ...);
 #define SPI1_CS_GPIO_Port GPIOA
 #define SPI2_CS_Pin GPIO_PIN_12
 #define SPI2_CS_GPIO_Port GPIOB
+#define ENC_KEY_Pin GPIO_PIN_8
+#define ENC_KEY_GPIO_Port GPIOC
+#define ENC_KEY_EXTI_IRQn EXTI9_5_IRQn
 #define IRED_Pin GPIO_PIN_11
 #define IRED_GPIO_Port GPIOC
 #define GREEN_LED_Pin GPIO_PIN_12
@@ -495,6 +519,11 @@ typedef struct s_recq_t {
 
 	extern TIM_HandleTypeDef *portIRED;//htim3; // таймер для приёма
 
+#endif
+
+#ifdef SET_ENC
+	#define TIME_encKeyPressed 75
+	#define TIME_btKeyPressed  80
 #endif
 
 
