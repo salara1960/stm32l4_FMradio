@@ -429,6 +429,14 @@ extern float lBand, rBand;
 extern uint8_t Volume;
 extern uint8_t BassBoost;
 extern uint8_t Band;// = 2;
+extern uint8_t Step;// = 0;
+
+#pragma pack(push,1)
+typedef struct step_t {
+	const float freq;
+	const char name[4];
+} step_t;
+#pragma pack(pop)
 
 
 #pragma pack(push,1)

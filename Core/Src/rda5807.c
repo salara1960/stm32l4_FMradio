@@ -35,7 +35,7 @@ uint8_t buf[2] = {0, 0};
 //==============================================================================
 // Инициализация rda5807
 //==============================================================================
-uint8_t rda5807_init(float *freq)
+uint8_t rda5807_init(float *freq, uint8_t band, uint8_t step)
 {
 uint8_t buf[2] = {0, 0};
 uint8_t *id = &buf[0];
@@ -67,7 +67,7 @@ uint8_t *id = &buf[0];
     rda5807_SoftReset();
     if (devError & devRDA) goto err_out;
 
-    rda5807_SetupDefault();
+    rda5807_SetupDefault(band, step);
     if (devError & devRDA) goto err_out;
 
     uint16_t fr = (uint16_t)(*freq * 10);
@@ -259,18 +259,8 @@ tReg02h reg02;
 //==============================================================================
 // Процедура производит начальную настройку rda5807
 //==============================================================================
-void rda5807_SetupDefault()
+void rda5807_SetupDefault(uint8_t band, uint8_t step)
 {
-    // Набор регистров rda5807 для записи настроек (кроме 0x08, 0x09)
-/*struct {
-	tReg02h Reg02;
-	tReg03h Reg03;
-	tReg04h Reg04;
-	tReg05h Reg05;
-	tReg06h Reg06;
-	tReg07h Reg07;
-} Buffs;*/
-
     // Регистр 0x02
     Buffs.Reg02.bENABLE = 1;
     Buffs.Reg02.bSOFT_RESET = 0;
@@ -287,8 +277,8 @@ void rda5807_SetupDefault()
     Buffs.Reg02.bDMUTE = 1;
     Buffs.Reg02.bDHIZ = 1;
     // Регистр 0x03
-    Buffs.Reg03.bSPACE = 0;//Step;//0;   // Шаг настройки - 0 = 100 КГц
-    Buffs.Reg03.bBAND = Band;//2;//0;    // Диапазон 2 - 76–108 MHz
+    Buffs.Reg03.bSPACE = step;//0;   // Шаг настройки - 0 = 100 КГц
+    Buffs.Reg03.bBAND = band;//2;//0;    // Диапазон 2 - 76–108 MHz
     Buffs.Reg03.bTUNE = 1;
     Buffs.Reg03.bDIRECT_MODE = 0;
     Buffs.Reg03.bCHAN = 0;
@@ -301,11 +291,11 @@ void rda5807_SetupDefault()
     Buffs.Reg04.bRSVD3 = 0;
     // Регистр 0x05
     Buffs.Reg05.bVOLUME = 0;
-    Buffs.Reg05.bANT_GAIN = 1;//0;
+    Buffs.Reg05.bANT_GAIN = 0;
     Buffs.Reg05.bANT_TYPE = ANT_TYPE_External;//ANT_TYPE_Headphones;//ANT_TYPE_Both;
     Buffs.Reg05.bSEEKTH = 6;//8;
     Buffs.Reg05.bRSVD3 = 0;
-    Buffs.Reg05.bINT_MODE = 0;//1;
+    Buffs.Reg05.bINT_MODE = 1;
     // Регистр 0x06
     Buffs.Reg06.bRSVD1 = 0;
     Buffs.Reg06.bOPEN_MODE = 0;
@@ -414,6 +404,7 @@ uint16_t l = 870, r = 1080;
     Buffs.Reg03.bCHAN = Freq100kHz;
     // Выставляем флаг начала перенастройки на канал
     Buffs.Reg03.bTUNE = 1;
+    Buffs.Reg03.bSPACE = Step;
     // Пишем регистр 0x03
     rda5807_write(3, (uint16_t *)&Buffs.Reg03, 1);
 
@@ -569,29 +560,6 @@ bool rda5807_Get_RDSReady()
 		return false;
 }
 //==============================================================================
-/*
-bool rda5807_Get_RDSData(uint8_t *data)//, bool *sync)
-{
-//	rda5807_read(0x0A, (uint16_t *)&Buffs.Reg0A, 1);
-
-//	*sync = Buffs.Reg0A.bRDSS;
-
-//	if (Buffs.Reg0A.bRDSR)
-		rda5807_read(0x0C, (uint16_t *)data, 4);
-
-	return true;//Buffs.Reg0A.bRDSR;
-}
-//==============================================================================
-uint16_t rda5807_Get_reg0B()
-{
-uint16_t ret = 0;
-
-    rda5807_read(0x0B, &ret, 1);
-
-    return ret;
-}
-*/
-//==============================================================================
 uint16_t rda5807_Get_reg(uint8_t reg)
 {
 uint16_t ret = 0;
@@ -601,5 +569,16 @@ uint16_t ret = 0;
 	return ret;
 }
 //==============================================================================
+void rda5807_Set_Step(uint8_t step)
+{
+	// Читаем регистр 3
+	rda5807_read(3, (uint16_t *)&Buffs.Reg03, 1);
+
+	Buffs.Reg03.bSPACE = step & 3;
+
+	rda5807_write(3, (uint16_t *)&Buffs.Reg03, 1);
+}
+//==============================================================================
+
 
 

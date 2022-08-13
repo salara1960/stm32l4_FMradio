@@ -133,7 +133,8 @@ const osSemaphoreAttr_t itSem_attributes = {
 //const char *ver = "1.8.6 10.08.22";//add new radio_station in play_list
 //const char *ver = "1.9 11.08.22";//rds support - done !
 //const char *ver = "1.9.1 12.08.22";//rds - set on by start
-const char *ver = "2.0 12.08.22";//add encoder !!!
+//const char *ver = "2.0 12.08.22";//add encoder !!!
+const char *ver = "2.1 13.08.22";//encoder support done
 
 
 
@@ -184,7 +185,7 @@ uint16_t rxInd = 0;
 char rxBuf[MAX_UART_BUF] = {0};
 volatile uint8_t restart = 0;
 
-static uint32_t epoch = 1660342580;//1660296769;//1660238159;//1660232569;
+static uint32_t epoch = 1660401165;//1660343410;//1660296769;//1660238159;//1660232569;
 //1660165305;//1660052289;//1659974469;//1659886879;//1659874060;//1659702715;//1659624810;
 //1659614411;//1659558535;//1659552520;//1659535529;//1659476485;//1659465512;//1659390226;//1659381664;
 //1659130699;//1659116379;//1659105660;//1659040054;//1659015162;//1659001909;
@@ -313,6 +314,8 @@ float lBand = 0.0;
 float rBand = 0.0;
 uint8_t Band = 2;// :2
 uint8_t newBand = 2;
+uint8_t Step = 0;// 100 КГц
+uint8_t newStep = 0;
 uint16_t Chan = 0;
 uint16_t RSSI = 0;
 volatile uint8_t i2cRdy = 1;
@@ -337,11 +340,11 @@ static const rec_t def_list[MAX_LIST] = {
 	//Band:2,1 76-108, 87-108
 	{2, 92.8, "Радио_DFM"},//Радио DFM в Калининграде
 	{2, 93.6, "Радио_7"},// Радио 7
-	{2, 94.0, "Комеди_Радио"},// Комеди Радио
+	{2, 94, "Комеди_Радио"},// Комеди Радио
 	{2, 95.1, "Вести_ФМ"},// Вести ФМ
 	{2, 95.5, "Ретро_ФМ"},// Ретро ФМ
 	{2, 96.3, "Русское_Радио"},// Русское Радио
-	{2, 97.0, "Радио_Вера"},// Радио Книга
+	{2, 97, "Радио_Вера"},// Радио Книга
 	{2, 97.7, "Серебр.Дождь"},// Серебрянный Дождь
 	{2, 98.5, "Радио_Энергия"},// Радио Энергия
 	{2, 99.5, "Радио_Звезда"},// Радио Звезда
@@ -368,6 +371,13 @@ const char *allBands[MAX_BAND] = {
 	"76-91 MHz",// (Japan)",
 	"76-108 MHz",// (world wide)",
 	"65-76 MHz"// (East Europe) or 50-65MHz"
+};
+
+const step_t allSteps[MAX_STEP] = {
+	{0.1, "100"},
+	{0.2, "200"},
+	{0.05, "50"},
+	{0.025, "25"}
 };
 
 
@@ -2278,7 +2288,7 @@ void StartTask(void *argument)
 #endif
 
 
-rdaID = rda5807_init(&Freq);
+rdaID = rda5807_init(&Freq, Band, Step);
 RSSI = rda5807_rssi();
 rda5807_SetVolume(Volume);
 rda5807_SetBassBoost(BassBoost);
@@ -2328,9 +2338,9 @@ Chan = rda5807_Get_Channel();
     ST7565_Print(xf, lin4, st, lfnt, 1, PIX_ON);
 
     if (stereo)
-    	il = sprintf(st, "Rssi:%u Freq:%.1f S", RSSI, Freq);
+    	il = sprintf(st, "Sig:%u Mhz:%.2f S", RSSI, Freq);
     else
-    	il = sprintf(st, "Rssi:%u Freq:%.1f", RSSI, Freq);
+    	il = sprintf(st, "Sig:%u Mhz:%.2f", RSSI, Freq);
     int lil = il;
     xf = ((SCREEN_WIDTH - (lfnt->FontWidth * il)) >> 1) & 0x7f;
     if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
@@ -2342,7 +2352,7 @@ Chan = rda5807_Get_Channel();
     if ((!xf) || (xf > (SCREEN_WIDTH - 3))) xf = 1;
     ST7565_Print(xf, lin6, sta, lfnt, 1, PIX_ON);
 
-    Report(1, "ChipID:0x%x Chan:%u Freq:%.2f %s RSSI:%u Band:%s Vol:%u BassEn:%u\r\n",
+    Report(1, "ChipID:0x%x Chan:%u Freq:%.3f %s Rssi:%u Band:%s Vol:%u BassEn:%u\r\n",
     			rdaID, Chan, Freq, sta, RSSI, allBands[Band], Volume, BassBoost);
 
     ST7565_DrawRectangle(0, lfnt->FontHeight, SCREEN_WIDTH - 1, SCREEN_HEIGHT - (lfnt->FontHeight << 1) - 2, PIX_ON);
@@ -2392,13 +2402,33 @@ Chan = rda5807_Get_Channel();
     		switch (evt) {
 #ifdef SET_ENC
     			case evt_EncKey:
-    				Report(1, "[que:%u] encKey released now\r\n", cntEvt);
+    			{
+    				newStep = (Step + 1) & 3;
+    				Step = newStep;
+    				//rda5807_Set_Step(Step);
+    				Report(1, "[que:%u] encKey released now -> set new step to %u '%s КГц'\r\n", cntEvt, Step, allSteps[Step].name);
+    				//
+#ifdef SET_DISPLAY
+    				ST7565_DrawFilledRectangle(0, SCREEN_HEIGHT - lfnt->FontHeight, SCREEN_WIDTH - 1, lfnt->FontHeight, PIX_OFF);
+    				int dl = sprintf(tmp, "newStep : %s КГц", allSteps[Step].name);
+    				int x = ((SCREEN_WIDTH - (lfnt->FontWidth * dl)) >> 1) & 0x7f;
+    				ST7565_Print(x, SCREEN_HEIGHT - lfnt->FontHeight, tmp, lfnt, 1, PIX_ON);//печатаем надпись с указаным шрифтом и цветом(PIX_ON-белый, PIX_OFF-черный)
+    				ST7565_Update();
+#endif
+    			}
     			break;
     			case evt_IncFreq:
-    				Report(1, "[que:%u] incFreq %.2f + step 100Khz = %.2f\r\n", cntEvt, Freq, Freq + 0.1);
-    			break;
     			case evt_DecFreq:
-    				Report(1, "[que:%u] decFreq %.2f - step 100Khz = %.2f\r\n", cntEvt, Freq, Freq - 0.1);
+    				if (evt == evt_IncFreq) {
+    					Report(1, "[que:%u] incFreq %.3f + step %s МГц = %.3f\r\n", cntEvt, newFreq, allSteps[Step].name, newFreq + allSteps[Step].freq);
+    					newFreq += allSteps[Step].freq;
+    				} else {
+    					Report(1, "[que:%u] decFreq %.3f - step %s МГц = %.3f\r\n", cntEvt, newFreq, allSteps[Step].name, newFreq - allSteps[Step].freq);
+    					newFreq -= allSteps[Step].freq;
+    				}
+    				//
+    				evts.evt = evt_Freq;
+    				if (osMessageQueuePut(evtQueHandle, (const void *)&evts, 1, 10) != osOK) devError |= devEVT;
     			break;
 #endif
 #ifdef SET_IRED
@@ -2488,10 +2518,10 @@ Chan = rda5807_Get_Channel();
     				next_evt = evt_Freq;
     				newFreq = getNextList(Freq, seek_up, &newBand);
 					if (newBand == Band) {
-						Report(1, "Band = newBand = %u -> goto set newFreq to %.1f (up = %u)\r\n", newBand, newFreq, seek_up);
+						Report(1, "Band = newBand = %u -> goto set newFreq to %.3f (up = %u)\r\n", newBand, newFreq, seek_up);
 						evts.evt = evt_Freq;
 					} else {
-						Report(1, "Band = %u -> goto set newBand to %u (newFreq to %.1f up = %u)\r\n", Band, newBand, newFreq, seek_up);
+						Report(1, "Band = %u -> goto set newBand to %u (newFreq to %.3f up = %u)\r\n", Band, newBand, newFreq, seek_up);
 						evts.evt = evt_Band;
 					}
 					if (osMessageQueuePut(evtQueHandle, (const void *)&evts, prio, 10) != osOK) devError |= devEVT;
@@ -2543,14 +2573,14 @@ Chan = rda5807_Get_Channel();
     						Chan = rda5807_Get_Channel();
     						//
     						if (stereo)
-    							sprintf(st, "Rssi:%u Freq:%.1f S", RSSI, Freq);
+    							sprintf(st, "Sig:%u Mhz:%.2f S", RSSI, Freq);
     						else
-    							sprintf(st, "Rssi:%u Freq:%.1f", RSSI, Freq);
+    							sprintf(st, "Sig:%u Mhz:%.2f", RSSI, Freq);
     						showLine(st, lin5, &lil, false);
 
     						sprintf(sta, "%s", nameStation(Freq));
+    						Report(1, "[que:%u] set new Freq to %.3f МГц '%s' (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
     						showLine(sta, lin6, &lia, true);
-    						Report(1, "[que:%u] set new Freq to %.1f '%s' (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
 #ifdef SET_RDS
     						if (rdsFlag) {
     							rds_init();
@@ -2585,7 +2615,7 @@ Chan = rda5807_Get_Channel();
     						Chan = rda5807_Get_Channel();
     						sprintf(sta, "%s", nameStation(Freq));
     						showLine(sta, lin6, &lia, true);
-    						Report(1, "[que:%u] set new Freq to %.1f %s (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
+    						Report(1, "[que:%u] set new Freq to %.3f МГц %s (Chan:%u)\r\n", cntEvt, Freq, sta, Chan);
     						//
 #ifdef SET_RDS
     						if (rdsFlag) {
@@ -2602,9 +2632,9 @@ Chan = rda5807_Get_Channel();
     					stereo = rda5807_Get_StereoMonoFlag();
 	#ifdef SET_DISPLAY
     					if (stereo)
-    						sprintf(st, "Rssi:%u Freq:%.1f S", RSSI, Freq);
+    						sprintf(st, "Sig:%u Mhz:%.2f S", RSSI, Freq);
     					else
-    						sprintf(st, "Rssi:%u Freq:%.1f", RSSI, Freq);
+    						sprintf(st, "Sig:%u Mhz:%.2f", RSSI, Freq);
     					showLine(st, lin5, &lil, false);
 
     					//sprintf(sta, "'%s'", nameStation(Freq));

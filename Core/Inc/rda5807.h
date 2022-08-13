@@ -192,7 +192,7 @@ void rda5807_read(uint8_t RegAddr, uint16_t *pBuff, uint8_t RegNum);
 void rda5807_write(uint8_t RegAddr, uint16_t *pBuff, uint8_t RegNum);
 
 // Процедура инициализации обмена с rda5807
-uint8_t rda5807_init(float *freq);
+uint8_t rda5807_init(float *freq, uint8_t band, uint8_t step);
 // Процедура чтения уровня сигнала RSSI
 uint16_t rda5807_rssi();
 // Процедура чтения ID rda5807
@@ -201,7 +201,7 @@ uint8_t rda5807_readID();
 void rda5807_SoftReset();
 
 // Процедура производит начальную настройку rda5807
-void rda5807_SetupDefault();
+void rda5807_SetupDefault(uint8_t band, uint8_t step);
 
 // Процедура устанавливает уровень громкости (0..16) выхода rda5807. При Value=0 включает MUTE
 void rda5807_SetVolume(uint8_t Value);
@@ -228,9 +228,8 @@ uint16_t rda5807_Get_Channel();
 uint8_t rda5807_Set_Band(uint8_t band);
 void rda5807_Set_Mute(uint8_t mute);
 bool rda5807_Get_RDSReady();
-//bool rda5807_Get_RDSData(uint8_t *data);
-//uint16_t rda5807_Get_reg0B();
 uint16_t rda5807_Get_reg(uint8_t reg);
+void rda5807_Set_Step(uint8_t step);
 
 
 #endif
